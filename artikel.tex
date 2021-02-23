@@ -1,0 +1,272 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[UKenglish]{babel}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2
+}
+
+\lstset{style=mystyle}
+
+\usepackage{tabularx}
+\usepackage{booktabs}
+
+\usepackage{mathtools}
+\usepackage{enumitem}
+\setenumerate[0]{label=(\arabic*)}
+
+% Kan Danny godt lide!
+\usepackage[autostyle]{csquotes}
+\usepackage{kpfonts}
+\usepackage{inconsolata}
+\linespread{1.06}
+
+\usepackage{xcolor}
+\usepackage{hyperref}
+\hypersetup{%
+	pdftitle=Q-learning for mathematical applications,
+	pdfauthor={Andreas Bøgh Poulsen},
+	colorlinks,
+	linkcolor={red!50!black},
+	citecolor={red!50!black},
+	urlcolor={red!50!black},
+	bookmarksnumbered=true
+}
+
+\usepackage[ntheorem]{mdframed}
+\usepackage[amsmath,thmmarks,hyperref]{ntheorem}
+\usepackage[capitalize]{cleveref}
+
+% Frame for theorems
+\definecolor{shadecolor}{gray}{0.93}
+\definecolor{rulecolor}{gray}{0.4}
+\mdfdefinestyle{thmframed}{%
+	%usetwoside=false, % For use with memoir twoside
+	skipabove=0.5em plus 0.4em minus 0.2em,
+	skipbelow=0.5em plus 0.4em minus 0.2em,
+	leftmargin=-7pt, rightmargin=-7pt, innerleftmargin=6pt,
+	innerrightmargin=6pt, innertopmargin=6pt, innerbottommargin=3pt,
+	linewidth=1pt, linecolor=rulecolor, backgroundcolor=shadecolor,
+	splittopskip=1.2em minus 0.2em,
+	splitbottomskip=0.5em plus 0.2em minus 0.1em,
+}
+
+% New theorem style with a dot
+\makeatletter
+\newtheoremstyle{changedot}%
+  {\item[\hskip\labelsep \theorem@headerfont ##2~~$\cdot$~~##1\theorem@separator]}%
+  {\item[\hskip\labelsep \theorem@headerfont ##2~~$\cdot$~~##1\ (##3)\theorem@separator]}
+
+\newtheoremstyle{changedotbreak}%
+  {\item\hbox to \textwidth{\theorem@headerfont ##2~~$\cdot$~~##1\theorem@separator\hfill}}%
+  {\item\hbox to \textwidth{\theorem@headerfont ##2~~$\cdot$~~##1\
+      (##3)\theorem@separator\hfill}}
+\makeatother
+
+\theoremstyle{changedot}
+\theoremseparator{.}
+\newmdtheoremenv[style=thmframed]{theorem}{Theorem}[section]
+\newmdtheoremenv[style=thmframed]{proposition}[theorem]{Proposition}
+\newmdtheoremenv[style=thmframed]{lemma}[theorem]{Lemma}
+\newmdtheoremenv[style=thmframed]{corollary}[theorem]{Corollary}
+
+\theorembodyfont{\normalfont}
+%\theoremsymbol{\ensuremath{\triangle}}
+\newmdtheoremenv[style=thmframed]{definition}[theorem]{Definition}
+
+\theoremstyle{changedotbreak}
+\newmdtheoremenv[style=thmframed]{definitionbreak}[theorem]{Definition}
+
+\theoremstyle{nonumberplain}
+\theoremheaderfont{\normalfont\itshape}
+\theorembodyfont{\normalfont}
+\theoremsymbol{\ensuremath{\square}}
+\newtheorem{proof}{Proof}
+
+\Crefname{theorem}{Theorem}{Theorems}
+\Crefname{proposition}{Proposition}{Propositions}
+\Crefname{lemma}{Lemma}{Lemmata}
+\Crefname{corollary}{Corollary}{Corollaries}
+\Crefname{definition}{Definition}{Definitions}
+
+\crefformat{equation}{(#2#1#3)}
+
+% / Kan Danny godt lide
+
+\title{Q-learning for mathematical applications}
+\author{
+    Andreas Bøgh Poulsen\\
+    201805425
+}
+% \date{28th June 2020}
+
+
+\usepackage{csquotes}
+\usepackage[backend=biber, style=alphabetic, maxcitenames=1]{biblatex}
+\addbibresource{references.bib}
+
+\usepackage{microtype}
+
+\usepackage{graphicx}
+
+
+
+
+\newcommand{\ro}[1]{^{\setminus #1}}
+\newcommand{\rr}  {^{\setminus}}
+
+\DeclarePairedDelimiter{\tuple}{\langle}{\rangle}
+\newcommand{\calM}{\mathcal{M}}
+\newcommand{\calV}{\mathcal{V}}
+\newcommand{\calD}{\mathcal{D}}
+\newcommand{\calG}{\mathcal{G}}
+
+\newcommand{\true}{\textsc{true}}
+\newcommand{\false}{\textsc{false}}
+
+\DeclareMathOperator*{\smallbigcup}{\textstyle\bigcup}
+\DeclareMathOperator*{\bigunion}{\mathchoice
+	{\smallbigcup}%
+	{\bigcup}%
+	{\bigcup}%
+	{\bigcup}%
+}
+\DeclareMathOperator*{\smallbigcap}{\textstyle\bigcap}
+\DeclareMathOperator*{\bigintersect}{\mathchoice
+	{\smallbigcap}%
+	{\bigcup}%
+	{\bigcup}%
+	{\bigcup}%
+}
+
+\DeclarePairedDelimiter{\abs}{\lvert}{\rvert}
+\DeclarePairedDelimiter{\norm}{\lVert}{\rVert}
+
+\newcommand{\setN}{\mathbb{N}}
+\newcommand{\setR}{\mathbb{R}}
+\newcommand{\card}[1]{\abs{#1}}
+
+\let\phi\varphi
+\frenchspacing
+
+% Partial functions
+% From https://tex.stackexchange.com/questions/47142/how-to-tex-an-arrow-with-vertical-stroke
+
+\makeatletter
+\newcommand{\pto}{}% just for safety
+\newcommand{\pgets}{}% just for safety
+
+\DeclareRobustCommand{\pto}{\mathrel{\mathpalette\p@to@gets\to}}
+\DeclareRobustCommand{\pgets}{\mathrel{\mathpalette\p@to@gets\gets}}
+
+\newcommand{\p@to@gets}[2]{%
+  \ooalign{\hidewidth$\m@th#1\mapstochar\mkern5mu$\hidewidth\cr$\m@th#1\to$\cr}%
+}
+\makeatother
+
+\newcommand{\id}{\mathrm{id}}
+\DeclarePairedDelimiter{\ceil}{\lceil}{\rceil}
+\DeclarePairedDelimiter{\floor}{\lfloor}{\rfloor}
+\DeclarePairedDelimiter{\anglemap}{\langle}{\rangle_{\infty}}
+
+\newcommand{\nextk}{\mathrm{next}}
+\newcommand{\enc}{\mathrm{enc}}
+
+\newcommand{\binlit}[1]{\mathbf{#1}}
+\newcommand{\bin}{\mathrm{bin}}
+\newcommand{\val}{\mathrm{val}}
+\newcommand{\Seq}{\mathrm{Seq}}
+\newcommand{\length}[1]{\abs{#1}}
+
+\DeclarePairedDelimiter{\gpath}{\langle}{\rangle}
+
+
+\begin{document}
+
+\maketitle
+
+\section{Preliminaries}
+
+\subsection{Abstract framework of deep learning}
+In abstract, modern machine learning is about fitting a universal approximator
+to some given data. In recent instances of it, this universal approximator would
+be a deep neural network, possibly with some variations like convolution,
+recurrence or attention. Using differentiation of a neural network and gradient
+descent we can minimize the error between the predictions of the network and
+some training data.
+
+I will not spend much time on this part and take the training of a neural
+network for granted. The important point is that we can minimize any error
+function, not just the difference between a prediction and some known data.
+
+This is an important insight. If we can check if the network is producing right
+result after the fact, we don't have to know the facit beforehand. This is good
+because we can use the network to discover solutions without having to actually
+solve the problem ourselves. For example, if we wanted to learn to find a
+divisor of a number, it's a lot easier to check a solution than finding a factor
+ourselves, so this is a good problem for machine learning. We can just set the
+error to zero if we found a factor and 1 if we didn't. On the other hand, it's
+difficult to check wether a number is a prime number or not, so this probably
+wouldn't be a good problem to solve with machine learning.
+
+\subsection{Reinforcement-learning and Q-learning}
+Let's build a bit more on the insight from before: we can minimize any error
+function. We can use this to extend the domain of our learning. One interesting
+case is learning to interact with an environment. This could be a robot
+interacting with a physical environment or a mathematician trying to prove a
+theorem. Both cases can be thought of as an agent doing an action, seeing how it
+worked out and taking a new action. Let's model such an interaction formally.
+
+\begin{definition}
+  Fix two non-empty sets $S, A$ and call $S$ the \empth{state-space} and $A$ the \emph{action-space}. Then, an \emph{environment} is a tuple $(S, s, A, P, Q, \epsilon, t)$ where
+
+  \begin{itemize}
+    \item $s \in S$
+    \item $P : S \to 2^{A}$ gives the permissible actions of a given state.
+    \item $Q : s\in S \times P(s) \to \mathbb R$ is called the \emph{reward-function}.
+    \item $\epsilon : s\in S \times P(s) \to S$ is called the \emph{update-function}.
+    \item $t : S \to \{True, False\}$ determines if a state is a \emph{terminal} state.
+  \end{itemize}
+
+  Given an environment, an \emph{agent} is a function $M : s\in S \times P(s) \to A$.
+\end{definition}
+
+In most cases all actions are always permissible, i.e. $P(s) = A$ for all $s \in S$. The intuition is the following setup:
+
+\begin{enumerate}
+  \item An agent observes an environment in state $s$ and decides to take some action $a \in P(s)$.
+  \item A reward of $Q(s, a)$ is given to the agent to tell it wether the action was good or not.
+  \item The environment is updated to $(S, s'=\epsilon(s), A, P, Q, \epsilon, t)$.
+    \item If $t(s') = True$ the interaction is done. If not, repeat from step 1.
+\end{enumerate}
+
+Of course the idea is that the agent would learn to take actions in such a way that the reward is maximized. 
+
+
+
+
+
+\printbibliography
+
+\end{document}
