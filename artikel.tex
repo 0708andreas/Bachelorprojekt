@@ -312,7 +312,7 @@ In value-estimation we determine how valuable a given state is. However, that is
 
 Instead of assigning a value to each state, we estimate the expected reward coming from a particular \emph{action}. That is
 \[Q(s, a) = \mathbb{E}[\sum_{i=t}^{T} R(s_{i}, a_{i}) | s_{t}=s, a_{t}=a, \text{agent } m]\].
-\colorbox{red}{TODO: Find the right formula}
+% \colorbox{red}{TODO: Find the right formula} I think it's correct now
 
 Q-learning is one of the first reinforcement learning algorithms that achieved break-through performance. One the first examples was the program TD-gammon, a program that learned to play backgammon. TD-gammon was novel because it exploited no domain knowledge of backgammon at all. It simply employed Q-learning and yet was able to match the performance of the best backgammon-bots of the time. These other bots all used extensive expert knowledge of the game so it was remarkable that Q-learning could learn to play as well as them. The first iteration of TD-gammon used simply naive Q-learning. Later iterations achieved even better performance by adding Monte Carlo Tree search (which we'll cover later) to the algorithm. While this did improve performance it's remarkable that high performance can be achieved without anything but a simple learning algorithm.
 
@@ -349,8 +349,18 @@ for every $t \in D$ and let our loss-function be the euclidean distance from $G$
 
 There is no proven reason why experience replay should help learning. DeepMind provides that it reduces variance in the gradients, which would help stabilize the learning. I don't want to risk saying something wrong, so I'll just say that it seems to work and that's a good enough reason to use it.
 
-
 \subsection{Policy gradient}
+Value estimation and Q-learning had the nice property that there was in some sense a concrete function we learned, the value associated with something. Policy gradient is different and exploits the backpropagation algorithm. The idea is that instead of trying to approximate something that we know, compute an error function between our current agent and some observed data, we can just specify that some behaviour was good and have the neural network optimize towards doing that again.
+
+The technique is to simply posit that the final gradient of the network must be 1, if we just won the game. Then we can use backpropagation to compute derivatives on every part of the network and update accordingly. This way, good actions get a higher score by the network and bad actions get a lower score. What does this score mean? Who cares! Higher means better and that's usually all we need.
+
+This idea is almost too simple. We don't try to learn any sort of value function that is a proxy for what would be a good action, we can simply tell the network ``this was a good sequence of actions. Do those more''.
+
+A policy gradient learner would explore the environment by sampling which action to take weighted by the learned scores. This ensures that the learner takes new actions, but it also keeps it somewhat on course with respect to what it learned so far.
+
+Let's work through a game of tic-tac-toe. The game looks like this:
+
+At each step the agent takes the action having the highest score. Only at the end of the game can we update our network, since that's the only point at which we know anything. At the end, the reward is 1, so that's the gradient of all the previous steps. Backpropagating and doing gradient descent increases the score of those actions in the future, making them more likely to be taken. Notice that action nr. 3 actually didn't go directly for the win and instead opted to prevent the opponents win. I have two comments to make here: First, this behaviour is not punished by our reward. As long as the agent makes sure to win eventually (which it does here by giving itself two winning moves) this is as good a play as winning as quickly as possible. Second, this behaviour might be discouraged over time by the fact that we do sample actions randomly and an immediate win gives a more certain reward than a delayed win. Note that we do not reward the sweet feeling of superiority given by having two winning moves.
 
 \subsubsection{Proximal policy gradient}
 
