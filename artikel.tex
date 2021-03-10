@@ -311,7 +311,7 @@ The idea is simple, the value of a given state is the value of the best next sta
 In value-estimation we determine how valuable a given state is. However, that is only a partial picture. We got into some trouble as soon as we can't predict the next state from any particular action. Another approach is Q-learning, which a somewhat different perspective.
 
 Instead of assigning a value to each state, we estimate the expected reward coming from a particular \emph{action}. That is
-\[Q(s_{t}, a_{t}) = \mathbb{E}[\sum_{i=t}^{\infty} R(s_{i}, a_{i})]\].
+\[Q(s, a) = \mathbb{E}[\sum_{i=t}^{T} R(s_{i}, a_{i}) | s_{t}=s, a_{t}=a, \text{agent } m]\].
 \colorbox{red}{TODO: Find the right formula}
 
 Q-learning is one of the first reinforcement learning algorithms that achieved break-through performance. One the first examples was the program TD-gammon, a program that learned to play backgammon. TD-gammon was novel because it exploited no domain knowledge of backgammon at all. It simply employed Q-learning and yet was able to match the performance of the best backgammon-bots of the time. These other bots all used extensive expert knowledge of the game so it was remarkable that Q-learning could learn to play as well as them. The first iteration of TD-gammon used simply naive Q-learning. Later iterations achieved even better performance by adding Monte Carlo Tree search (which we'll cover later) to the algorithm. While this did improve performance it's remarkable that high performance can be achieved without anything but a simple learning algorithm.
@@ -326,8 +326,34 @@ Consider what happens after we won a game. The agent updates that the last actio
 
 The backwards propagation of rewards allows the agent to learn complex strategies. Even though any one trajectory may contain good and bad moves, on average trajectories that leads to a win will share good moves and trajectories leading to a loss wil share bad moves. It may seem a bit wishful to think at they will cancel each other out, Watkins and Dayan proved convergence to optimal strategy.
 
+\subsubsection{Deep Q-learning}
+A major challenge for Q-learning is the table of states and actions. As our problem grows in complexity, this table becomes large very quickly. To remedy this, modern Q-learning uses function approximation to learn a single $Q : state \times action \to reward$. the DeepMind team used in 2015 a convolutional neaural network to learn the Q-function and succeeded in learning to play a variety of 49 different Atari games.
+
+In this setting, we need to adapt the learning formula given above. In that case we updated our estimated Q-function to be a linear combination of the previous estimate and our new knowledge. This can be viewed as a simple form of gradient descent towards the observed data.
+
+To do gradient descent on a neural network, we need a loss function $L$ that is the difference between our current estimate and the observed data. It looks like this:
+\[L_{t} = \begin{cases}
+    \left( r + max_{a} Q(s_{t+1}, a) - Q(s_{t}, a_{t}) \right)^{2} & \text{if $s_{t}$ is non-terminal} \\
+    (r - Q(s_{t}, a_{t}))^{2} & \text{if $s_{t}$ is terminal}
+  \end{cases}\]
+
+By computing gradients on this function we can update our neural network (or other function approximator) towards the updated values.
+
+\subsubsection{Experience replay}
 
 
+
+
+
+\subsection{Policy gradient}
+
+\subsubsection{Proximal policy gradient}
+
+\section{Other methods}
+
+\subsection{Monte Carlo Tree Search}
+
+\subsection{Advantage Estimation}
 
 
 
