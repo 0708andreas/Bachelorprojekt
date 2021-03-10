@@ -327,7 +327,7 @@ Consider what happens after we won a game. The agent updates that the last actio
 The backwards propagation of rewards allows the agent to learn complex strategies. Even though any one trajectory may contain good and bad moves, on average trajectories that leads to a win will share good moves and trajectories leading to a loss wil share bad moves. It may seem a bit wishful to think at they will cancel each other out, Watkins and Dayan proved convergence to optimal strategy.
 
 \subsubsection{Deep Q-learning}
-A major challenge for Q-learning is the table of states and actions. As our problem grows in complexity, this table becomes large very quickly. To remedy this, modern Q-learning uses function approximation to learn a single $Q : state \times action \to reward$. the DeepMind team used in 2015 a convolutional neaural network to learn the Q-function and succeeded in learning to play a variety of 49 different Atari games.
+A major challenge for Q-learning is the table of states and actions. As our problem grows in complexity, this table becomes large very quickly. To remedy this, modern Q-learning uses function approximation to learn a single $Q : state \times action \to reward$. The DeepMind team used in 2015 a convolutional neaural network to learn the Q-function and succeeded in learning to play a variety of 49 different Atari games.
 
 In this setting, we need to adapt the learning formula given above. In that case we updated our estimated Q-function to be a linear combination of the previous estimate and our new knowledge. This can be viewed as a simple form of gradient descent towards the observed data.
 
@@ -340,9 +340,14 @@ To do gradient descent on a neural network, we need a loss function $L$ that is 
 By computing gradients on this function we can update our neural network (or other function approximator) towards the updated values.
 
 \subsubsection{Experience replay}
+Normal Q-learning is a temporal-difference learning method, which means it only learns from the timestep it just took. Experience replay keeps track of previous experiences and uses them when doing an update. To do this, we keep a trajectory of the currect episode, sample some random times from it and perform gradient descent on every remembered timestep simultaneously. Specifically, for a random sample $D = \{t_{i}\} \subset \mathbb N$ of timesteps, we compute the vector
+\[G_{t} =  \begin{cases}
+    r_{t} + max_{a} Q(s_{t+1}, a) & \text{if $s_{t}$ is non-terminal} \\
+    r_{t} & \text{if $s_{t}$ is terminal}
+  \end{cases} \]
+for every $t \in D$ and let our loss-function be the euclidean distance from $G$ to the vector $H_{t} = Q(s_{t}, a_{t})$ for $t \in D$.
 
-
-
+There is no proven reason why experience replay should help learning. DeepMind provides that it reduces variance in the gradients, which would help stabilize the learning. I don't want to risk saying something wrong, so I'll just say that it seems to work and that's a good enough reason to use it.
 
 
 \subsection{Policy gradient}
