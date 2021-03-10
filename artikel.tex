@@ -114,6 +114,11 @@
 
 % / Kan Danny godt lide
 
+% Kan Andreas godt lide
+\setlength{\parindent}{1em}
+\setlength{\parskip}{0.7em}
+
+
 \title{Q-learning for mathematical applications}
 \author{
     Andreas Bøgh Poulsen\\
@@ -230,7 +235,7 @@ error to zero if we found a factor and 1 if we didn't. On the other hand, it's
 difficult to check wether a number is a prime number or not, so this probably
 wouldn't be a good problem to solve with machine learning.
 
-\subsection{Reinforcement-learning and Q-learning}
+\subsection{Reinforcement-learning}
 Let's build a bit more on the insight from before: we can minimize any error
 function. We can use this to extend the domain of our learning. One interesting
 case is learning to interact with an environment. This could be a robot
@@ -239,13 +244,12 @@ theorem. Both cases can be thought of as an agent doing an action, seeing how it
 worked out and taking a new action. Let's model such an interaction formally.
 
 \begin{definition}
-  Fix two non-empty sets $S, A$ and call $S$ the \empth{state-space} and $A$ the \emph{action-space}. Then, an \emph{environment} is a tuple $(S, s, A, P, Q, \epsilon, t)$ where
+  Fix two non-empty sets $S, A$ and call $S$ the \emph{state-space} and $A$ the \emph{action-space}. Then, an \emph{environment} is a tuple $(S, A, P, R, \epsilon, t)$ where
 
   \begin{itemize}
-    \item $s \in S$
     \item $P : S \to 2^{A}$ gives the permissible actions of a given state.
-    \item $Q : s\in S \times P(s) \to \mathbb R$ is called the \emph{reward-function}.
-    \item $\epsilon : s\in S \times P(s) \to S$ is called the \emph{update-function}.
+    \item $R : s\in S \times P(s) \to \mathbb R$ is called the \emph{reward-function}.
+    \item $\epsilon : s\in S \times P(s) \to S$ is called the \emph{update-function}. This might a probabilistic function i.e. non-deterministic.
     \item $t : S \to \{True, False\}$ determines if a state is a \emph{terminal} state.
   \end{itemize}
 
@@ -256,17 +260,78 @@ In most cases all actions are always permissible, i.e. $P(s) = A$ for all $s \in
 
 \begin{enumerate}
   \item An agent observes an environment in state $s$ and decides to take some action $a \in P(s)$.
-  \item A reward of $Q(s, a)$ is given to the agent to tell it wether the action was good or not.
-  \item The environment is updated to $(S, s'=\epsilon(s), A, P, Q, \epsilon, t)$.
+  \item A reward of $R(s, a)$ is given to the agent to tell it wether the action was good or not.
+  \item The environment is updated to $(S, s'=\epsilon(s), A, P, R, \epsilon, t)$.
     \item If $t(s') = True$ the interaction is done. If not, repeat from step 1.
 \end{enumerate}
 
-Of course the idea is that the agent would learn to take actions in such a way that the reward is maximized. 
+Of course the idea is that the agent would learn to take actions in such a way that the reward is maximized.
+
+In order to facilitate learning, we need to repeat the process described above a number of times, so let's fix some naming and notations for that:
+
+\begin{definition}
+  Given an \emph{environment} $(S, A, P, Q, \epsilon, t)$, an \emph{agent} $M : s \in S \times P(s) \to A$ and an initial state $s_{0} \in S$ a \emph{Markov decision process} is an iterative process of states and actions, defined recursively as
+  \begin{align}
+    s_{0} &= s_{0} \\
+    s_{t+1} &= \epsilon(s_{t}, a_{t}) \\
+    \text{where } a_{t} &= M(s_{t})
+  \end{align}
+
+  A \emph{trajectory} is a record of a Markov Decision Process, formally a tuple \[(s_{t}, a_{t}, r_{t}, t_{t})\] where $s_{t}$ and $a_{t}$ are described above and $r_{t} = R(s_{t}, a_{t})$, $t_{t} = t(s_{t})$.
+\end{definition}
+
+
+\section{Learning strategies}
+The abstract framework of Markov Decision Processes is a rather simple idea. And indeed, that is not where the magic of reinforcement learning is. None of the above even hinted at how any learning would occur, we have only simulated an environment and doled our rewards. It shouldn't be surprising that there are many strategies when it comes to learning. We'll outline few of them here, as well as few ``tricks'' that can be used to improve performance.
+
+We'll focus on temporal-difference strategies as these strategies are most widely used today. The idea here is to do an update at every step along the trajectory, trying to figure out if the step our agent just took was a good or a bad step.
+
+In order to illustrate these ideas, we'll use tic-tac-toe as example. I hope that this is a familiar game to everyone. I will focus on the pen-and-paper version, where a piece is placed and never moved, but the ideas carry over to other variations of the game
+
+\subsection{Value-estimation}
+Think about how you would play tic-tac-toe yourself. At least when I play, I have the following heuristc: a situation where my opponent has an opportunity to win is bad. A situation where I have an opportunity to win is good. A situation where I have two opportunities to win is even better and similarly worse if my opponent have two opportunities. Also, a situation that might lead me a very good situation is pretty good, for example if I'm cross here and it's my turn:
+
+\begin{tabular}{c|c|c}
+    &   & X \\ \hline
+    & O &   \\ \hline
+  X &   & O
+\end{tabular}
+
+All these considerations come together, and I quickly give each situation a score and choose the action that is most likely to lead me to a good situation.
+
+This might lead us to a good learning strategy. If we can learn how valuable each possible situation is, we're in pretty good shape. If we can then estimate how likely an action is to lead us to each situation, we can choose the action that maximizes value.
+
+This idea can be treated using the Bellman equation. We'll consider the deterministic case first, where the Bellman equation is simply
+\[V(s_{0}) = \max_{a_{0}} \{R(s_{0}, a_{0}) + V(x_{1}) \} \text{, where } x_{1} = \epsilon(s_{0}, a_{0})\]
+The idea is simple, the value of a given state is the value of the best next state plus the reward given by progressing to that state. 
+
+\colorbox{red}{TODO: extend this to stochastic case}
+
+\subsection{Q-learning}
+In value-estimation we determine how valuable a given state is. However, that is only a partial picture. We got into some trouble as soon as we can't predict the next state from any particular action. Another approach is Q-learning, which a somewhat different perspective.
+
+Instead of assigning a value to each state, we estimate the expected reward coming from a particular \emph{action}. That is
+\[Q(s_{t}, a_{t}) = \mathbb{E}[\sum_{i=t}^{\infty} R(s_{i}, a_{i})]\].
+\colorbox{red}{TODO: Find the right formula}
+
+Q-learning is one of the first reinforcement learning algorithms that achieved break-through performance. One the first examples was the program TD-gammon, a program that learned to play backgammon. TD-gammon was novel because it exploited no domain knowledge of backgammon at all. It simply employed Q-learning and yet was able to match the performance of the best backgammon-bots of the time. These other bots all used extensive expert knowledge of the game so it was remarkable that Q-learning could learn to play as well as them. The first iteration of TD-gammon used simply naive Q-learning. Later iterations achieved even better performance by adding Monte Carlo Tree search (which we'll cover later) to the algorithm. While this did improve performance it's remarkable that high performance can be achieved without anything but a simple learning algorithm.
+
+In small cases, we can keep the Q-function in a simple lookup table. So, given a state and an action, we can do a lookup to find our estimation of the future reward given that action. In this case, the learning algorithm is simply:
+\[Q(s_{t}, a_{s}) \leftarrow \begin{cases} (1 - \alpha)Q(s_{t}, a_{t}) + \alpha (r_{t} + \max_{a} Q(s_{t+1}, a)) & \text{if  $s_{t}$ is non-terminal} \\ (1 - \alpha) Q(s_{t}, a_{t}) + \alpha r_{t} & \text{if $s_{t}$ is terminal} \end{cases}\]
+where $\alpha$ is the learning rate. The intuition here is that we now know what reward we got by taking action $a_{t}$. Therefor we can update our estimate to be a combination of our old estimate and an updated estimate based on the observed reward plus our estimate for the rest of the process.
+
+Let's see how that would work in the our tic-tac-toe example. Whenever the agent makes a move we give it a reward of $+1$ if it won by that move and $-1$ if the opponent won on their following move. This is typical for reinforcement learning; we give a reward when a task is completed and expect our agent to learn how to perform the entire task. It sounds a bit unreasonable, doesn't it? It's obvious that the action immediately before a reward was a good action, but what about the action before that? It might have been good, or it might have been bad even though we won the action after. The cause-and-effect chain gets weaker every link. In practice, it works anyway.
+
+Consider what happens after we won a game. The agent updates that the last action was a good one, so $Q(s_{T}, a_{T})$ where $T$ is the last step of the trajectory, grows. What about the rest of the actions? Well, they are not immediately updated. However, the next time the agent faces a situation just before the winning move $a_{T}$, the estimated future rewards from that situation grows since we know we can win after it. Similarly, next time the agent faces a situation just before the one we just considered, the reward is propagated backwards.
+
+The backwards propagation of rewards allows the agent to learn complex strategies. Even though any one trajectory may contain good and bad moves, on average trajectories that leads to a win will share good moves and trajectories leading to a loss wil share bad moves. It may seem a bit wishful to think at they will cancel each other out, Watkins and Dayan proved convergence to optimal strategy.
 
 
 
 
 
-\printbibliography
+
+
+% \printbibliography
 
 \end{document}
