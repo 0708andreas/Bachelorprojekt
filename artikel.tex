@@ -45,7 +45,7 @@
 \usepackage{xcolor}
 \usepackage{hyperref}
 \hypersetup{%
-	pdftitle=Q-learning for mathematical applications,
+	pdftitle=Reinforcement learning for mathematical applications,
 	pdfauthor={Andreas Bøgh Poulsen},
 	colorlinks,
 	linkcolor={red!50!black},
@@ -103,6 +103,7 @@
 \theorembodyfont{\normalfont}
 \theoremsymbol{\ensuremath{\square}}
 \newtheorem{proof}{Proof}
+\newtheorem{remark}{Remark}
 
 \Crefname{theorem}{Theorem}{Theorems}
 \Crefname{proposition}{Proposition}{Propositions}
@@ -119,7 +120,7 @@
 \setlength{\parskip}{0.7em}
 
 
-\title{Q-learning for mathematical applications}
+\title{Reinforcement learning for mathematical applications}
 \author{
     Andreas Bøgh Poulsen\\
     201805425
@@ -284,9 +285,7 @@ In order to facilitate learning, we need to repeat the process described above a
 \section{Learning strategies}
 The abstract framework of Markov Decision Processes is a rather simple idea. And indeed, that is not where the magic of reinforcement learning is. None of the above even hinted at how any learning would occur, we have only simulated an environment and doled our rewards. It shouldn't be surprising that there are many strategies when it comes to learning. We'll outline few of them here, as well as few ``tricks'' that can be used to improve performance.
 
-We'll focus on temporal-difference strategies as these strategies are most widely used today. The idea here is to do an update at every step along the trajectory, trying to figure out if the step our agent just took was a good or a bad step.
-
-In order to illustrate these ideas, we'll use tic-tac-toe as example. I hope that this is a familiar game to everyone. I will focus on the pen-and-paper version, where a piece is placed and never moved, but the ideas carry over to other variations of the game
+In order to illustrate these ideas, we'll use tic-tac-toe as example. I hope that this is a familiar game to everyone. I will focus on the pen-and-paper version, where a piece is placed and never moved, but the ideas carry over to other variations of the game.
 
 \subsection{Value-estimation}
 Think about how you would play tic-tac-toe yourself. At least when I play, I have the following heuristc: a situation where my opponent has an opportunity to win is bad. A situation where I have an opportunity to win is good. A situation where I have two opportunities to win is even better and similarly worse if my opponent have two opportunities. Also, a situation that might lead me a very good situation is pretty good, for example if I'm cross here and it's my turn:
@@ -297,7 +296,7 @@ Think about how you would play tic-tac-toe yourself. At least when I play, I hav
   X &   & O
 \end{tabular}
 
-All these considerations come together, and I quickly give each situation a score and choose the action that is most likely to lead me to a good situation.
+All these considerations come together, and I quickly give each situation a score and choose the action that is most likely to lead me to a good situation, here placing a piece in the upper left corner.
 
 This might lead us to a good learning strategy. If we can learn how valuable each possible situation is, we're in pretty good shape. If we can then estimate how likely an action is to lead us to each situation, we can choose the action that maximizes value.
 
@@ -324,7 +323,7 @@ Let's see how that would work in the our tic-tac-toe example. Whenever the agent
 
 Consider what happens after we won a game. The agent updates that the last action was a good one, so $Q(s_{T}, a_{T})$ where $T$ is the last step of the trajectory, grows. What about the rest of the actions? Well, they are not immediately updated. However, the next time the agent faces a situation just before the winning move $a_{T}$, the estimated future rewards from that situation grows since we know we can win after it. Similarly, next time the agent faces a situation just before the one we just considered, the reward is propagated backwards.
 
-The backwards propagation of rewards allows the agent to learn complex strategies. Even though any one trajectory may contain good and bad moves, on average trajectories that leads to a win will share good moves and trajectories leading to a loss wil share bad moves. It may seem a bit wishful to think at they will cancel each other out, Watkins and Dayan proved convergence to optimal strategy.
+The backwards propagation of rewards allows the agent to learn complex strategies. Even though any one trajectory may contain good and bad moves, on average trajectories that leads to a win will share good moves and trajectories leading to a loss wil share bad moves. It may seem a bit wishful to think at they will cancel each other out, but Watkins and Dayan proved convergence to optimal strategy.
 
 \subsubsection{Deep Q-learning}
 A major challenge for Q-learning is the table of states and actions. As our problem grows in complexity, this table becomes large very quickly. To remedy this, modern Q-learning uses function approximation to learn a single $Q : state \times action \to reward$. The DeepMind team used in 2015 a convolutional neaural network to learn the Q-function and succeeded in learning to play a variety of 49 different Atari games.
@@ -352,17 +351,33 @@ There is no proven reason why experience replay should help learning. DeepMind p
 \subsection{Policy gradient}
 Value estimation and Q-learning had the nice property that there was in some sense a concrete function we learned, the value associated with something. Policy gradient is different and exploits the backpropagation algorithm. The idea is that instead of trying to approximate something that we know, compute an error function between our current agent and some observed data, we can just specify that some behaviour was good and have the neural network optimize towards doing that again.
 
-The technique is to simply posit that the final gradient of the network must be 1, if we just won the game. Then we can use backpropagation to compute derivatives on every part of the network and update accordingly. This way, good actions get a higher score by the network and bad actions get a lower score. What does this score mean? Who cares! Higher means better and that's usually all we need.
+That was vague, so let's do some math. We have an agent with some parameters $\theta$ and a reward function $F(t)$ taking a trajectory $t$ and giving us a total reward for that trajectory. Since we want to optimize $E[F(t) \mid \theta]$ we can do that by taking the gradient wrt. $theta$ i.e. $\nabla_{\theta} E[F(t) \mid \theta]$. This expression is difficult to compute, so let's do some rearranging:
 
-This idea is almost too simple. We don't try to learn any sort of value function that is a proxy for what would be a good action, we can simply tell the network ``this was a good sequence of actions. Do those more''.
+\begin{equation} \label{policy_grad}
+\begin{aligned}
+  \nabla_{\theta} E[F(t) \mid \theta] &= \nabla_{\theta} \sum_{t}P(t \mid \theta) F(t) \\
+                                      &= \sum_{t} F(t) \nabla_{\theta} P(t \mid \theta)  \\
+                                      &= \sum_{t} F(t) P(t \mid \theta) \frac{\nabla_{\theta} P(t \mid \theta)}{P(t \mid \theta)} \\
+                                      &= \sum_{t} P(t \mid \theta) \nabla_{\theta} \log P(t \mid \theta) && \text{since $\frac{\nabla_{\theta} x}{x} = \nabla_{\theta} \log x$.} \\
+                                      &= E[F(t) \nabla_{\theta} \log P(t \mid \theta)]
+\end{aligned}
+\end{equation}
 
-A policy gradient learner would explore the environment by sampling which action to take weighted by the learned scores. This ensures that the learner takes new actions, but it also keeps it somewhat on course with respect to what it learned so far.
+Now we're in good shape. Since $\log$ is a monotonically growing function we now get, that if $F(t) > 0$ we can increase $E[F(t) \mid \theta]$ by increasing $P(t \mid \theta)$, at least locally. Similarly, if $F(t) < 0$, decreasing $P(T \mid \theta)$ will increase $E[F(t) \mid \theta]$.
 
-Let's work through a game of tic-tac-toe. The game looks like this:
+Right, so how do we increase the probability of a trajectory? Intuitively, we just increase the probability of the actions the trajectory consists of, and this turns out to be sufficient. Since each action is taken independently of previous actions, we have \[P(t \mid \theta) = P(s_{0}) \prod_{i=0}^{T-1} \pi_{\theta}(a_{i} \mid s_{i}) P(s_{i+1}, r_{i} \mid s_{i}, a_{i})\] where $pi_{\theta}$ gives the probability distribution of actions that the agent is sampling from. Taking the logarithm and gradient on both sides, we get that \[\nabla_{\theta} \log P(t \mid \theta) = \nabla_{\theta} \sum_{i=0}^{T-1} \log \pi_{\theta}(a_{i} \mid s_{i})\] and thus, by taking this together with \ref{policy_grad} that \[\nabla_{\theta} E[F(t) \mid \theta] = E\left[ F(t) \nabla_{\theta} \sum_{i=0}^{T-1} \log \pi_{\theta} (a_{i} \mid s_{i}) \right]\] and this finally gives us a good way to update our neural network: simply increase $\pi_{\theta} (a_{i} \mid s_{i})$ by following the gradient of the neural network.
 
-At each step the agent takes the action having the highest score. Only at the end of the game can we update our network, since that's the only point at which we know anything. At the end, the reward is 1, so that's the gradient of all the previous steps. Backpropagating and doing gradient descent increases the score of those actions in the future, making them more likely to be taken. Notice that action nr. 3 actually didn't go directly for the win and instead opted to prevent the opponents win. I have two comments to make here: First, this behaviour is not punished by our reward. As long as the agent makes sure to win eventually (which it does here by giving itself two winning moves) this is as good a play as winning as quickly as possible. Second, this behaviour might be discouraged over time by the fact that we do sample actions randomly and an immediate win gives a more certain reward than a delayed win. Note that we do not reward the sweet feeling of superiority given by having two winning moves.
+\begin{remark}
+  The above derivation can be done more generally than we've done in \ref{policy_grad}. By assuming an arbitrary, not necessarily discrete, probility distribution of states, we could replace the sum with an integral for a more general derivation.
+\end{remark}
 
-\subsubsection{Proximal policy gradient}
+Now, this is great if we have direct access to a gradient descent optimizer. However, most modern machine learning frameworks is fixed to the model of minimizing an error function. The solution is very simple; to maximize $F(t) \sum_{i} \log \pi_{\theta} (s_{i} \mid s_{i})$ we can minimize $-F(t) \sum_{i} \log \pi_{\theta} (a_{i} \mid s_{i})$. Thus our loss could be just that.
+
+\subsubsection{Normalization}
+There are a number of challenges when doing policy gradient learning in practise. One is that rewards are often very high variance and not balanced. For example, if we only care about achieving a goal, every reward will be positive so every action will be encouraged. The reason things still work in this situation is that actions leading to higher rewards will lead to steeper gradients and be ``encouraged more''. It might give better results if we could normalize our rewards by subtracting the mean and dividing by the standard deviation.
+
+One way of achieving this is to normalize the rewards from every episode indpedendantly of other episodes. This gives better result than the naive approach. Another method is to train another agent to be the baseline, preferably using a simpler learning technique, and use the performance of that agent to approximate the mean of the rewards.
+
 
 \section{Other methods}
 
