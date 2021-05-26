@@ -1,10 +1,15 @@
 \documentclass{article}
 \usepackage[utf8]{inputenc}
 \usepackage[UKenglish]{babel}
+% \usepackage{fontspec}
+% \usepackage{polyglossia}
+% \usepackage{unicode-math}
+\usepackage{minted}
 \usepackage{listings}
 \usepackage{xcolor}
 \usepackage{quiver}
 \usepackage[pdf]{graphviz}
+\usepackage{caption, subcaption}
 
 \definecolor{codegreen}{rgb}{0,0.6,0}
 \definecolor{codegray}{rgb}{0.5,0.5,0.5}
@@ -166,6 +171,8 @@
 \newcommand{\true}{\textsc{true}}
 \newcommand{\false}{\textsc{false}}
 
+\DeclareMathOperator{\lcm}{lcm}
+
 \DeclareMathOperator*{\smallbigcup}{\textstyle\bigcup}
 \DeclareMathOperator*{\bigunion}{\mathchoice
 	{\smallbigcup}%
@@ -227,250 +234,10 @@
 
 \maketitle
 
-\section{Preliminaries}
+\section{Introduction}
+In 2020 Dylan Peifer et al\cite{peifer} showed how to use deep learning to improve the performance of algorithms for constructing Gröbner bases. The goal of this project was to reproduce the results of this paper, as well as attempt some other techniques.
 
-\subsection{Abstract framework of deep learning}
-In abstract, modern machine learning is about fitting a universal approximator
-to some given data. In recent instances of it, this universal approximator would
-be a deep neural network, possibly with some variations like convolution,
-recurrence or attention. Using differentiation of a neural network and gradient
-descent we can minimize the error between the predictions of the network and
-some training data.
-
-I will not spend much time on this part and take the training of a neural
-network for granted. The important point is that we can minimize any error
-function, not just the difference between a prediction and some known data.
-
-This is an important insight. If we can check if the network is producing right
-result after the fact, we don't have to know the facit beforehand. This is good
-because we can use the network to discover solutions without having to actually
-solve the problem ourselves. For example, if we wanted to learn to find a
-divisor of a number, it's a lot easier to check a solution than finding a factor
-ourselves, so this is a good problem for machine learning. We can just set the
-error to zero if we found a factor and 1 if we didn't. On the other hand, it's
-difficult to check wether a number is a prime number or not, so this probably
-wouldn't be a good problem to solve with machine learning.
-
-\subsection{Reinforcement-learning}
-Let's build a bit more on the insight from before: we can minimize any error
-function. We can use this to extend the domain of our learning. One interesting
-case is learning to interact with an environment. This could be a robot
-interacting with a physical environment or a mathematician trying to prove a
-theorem. Both cases can be thought of as an agent doing an action, seeing how it
-worked out and taking a new action. Let's model such an interaction formally.
-
-\begin{definition}
-  Fix two non-empty sets $S, A$ and call $S$ the \emph{state-space} and $A$ the \emph{action-space}. Then, an \emph{environment} is a tuple $(S, A, P, R, \epsilon, t)$ where
-  \begin{itemize}
-    \item $P : S \to 2^{A}$ gives the permissible actions of a given state.
-    \item $R : s\in S \times P(s) \to \mathbb R$ is called the \emph{reward-function}.
-    \item $\epsilon : s\in S \times P(s) \to S$ is called the \emph{update-function}. This might a probabilistic function i.e. non-deterministic.
-    \item $t : S \to \{True, False\}$ determines if a state is a \emph{terminal} state.
-  \end{itemize}
-
-  Given an environment, an \emph{policy} is a propability distribution $\pi(s \mid a)$ of taking an action $a$ given a state $s$.
-\end{definition}
-
-In most cases all actions are always permissible, i.e. $P(s) = A$ for all $s \in S$. The intuition is the following setup:
-\begin{enumerate}
-  \item An agent observes an environment in state $s$ and decides to take some action $a \in P(s)$.
-  \item A reward of $R(s, a)$ is given to the agent to tell it wether the action was good or not.
-  \item The environment is updated to $(S, s'=\epsilon(s), A, P, R, \epsilon, t)$.
-    \item If $t(s') = True$ the interaction is done. If not, repeat from step 1.
-\end{enumerate}
-
-Of course the idea is that the agent would learn to take actions in such a way that the reward is maximized.
-
-In order to facilitate learning, we need to repeat the process described above a number of times, so let's fix some naming and notations for that:
-
-\begin{definition}
-  Given an \emph{environment} $(S, A, P, Q, \epsilon, t)$, an \emph{agent} $M : s \in S \times P(s) \to A$ and an initial state $s_{0} \in S$ a \emph{Markov decision process} is an iterative process of states and actions, defined recursively as
-  \begin{align}
-    s_{0} &= s_{0} \\
-    s_{t+1} &= \epsilon(s_{t}, a_{t}) \\
-    \text{where } a_{t} &= M(s_{t})
-  \end{align}
-
-  A \emph{trajectory} is a record of a Markov Decision Process, formally a tuple \[\tau = (s_{t}, a_{t}, r_{t}, t_{t})\] where $s_{t}$ and $a_{t}$ are described above and $r_{t} = R(s_{t}, a_{t})$, $t_{t} = t(s_{t})$. Given a trajectory $\tau$, $\tau_{p}$ is $\tau$ starting from index $p$.
-\end{definition}
-
-A trajectory might be finite or infinite. In order to give a meaningful reward for an infinite trajectory, we'll introduce a \emph{discount} factor $\gamma$, usually given the value 0.99.
-
-Given a trajectory $\tau = (s_{t}, a_{t}, r_{t}, t_{t})$ we will define the \emph{value} of this trajectory \[G(\tau_{p}) = \sum_{k=p}^{T} \gamma^{k} r_{k}.\]
-
-
-\section{Learning strategies}
-The abstract framework of Markov Decision Processes is a rather simple idea. And indeed, that is not where the magic of reinforcement learning is. None of the above even hinted at how any learning would occur, we have only simulated an environment and doled our rewards. It shouldn't be surprising that there are many strategies when it comes to learning. We'll outline few of them here, as well as few ``tricks'' that can be used to improve performance.
-
-In order to illustrate these ideas, we'll use tic-tac-toe as example. I hope that this is a familiar game to everyone. I will focus on the pen-and-paper version, where a piece is placed and never moved, but the ideas carry over to other variations of the game.
-
-\subsection{Value-estimation and Q-learning}
-Almost all reinforcement learning is about estimating value functions -- how good a state or action is. For example, we can define the \emph{value} of a state $s$ given an agent $\pi$ to be \[v_{\pi}(s) = \mathbb E \left[ G(\tau_{p}) \mid s_{p} = s, \pi \right] = \m E \left[ \sum_{k=p}^{T} \gamma^{k} r_{k} \mid s_{p} = s, \pi \right].\]
-
-The value-function can be expressed recursively:
-\begin{align}
-  v_{\pi}(s) &= \m E[G(\tau_{p}) \mid s_{p} = s, \pi] \\
-             &= \m E\left[ \sum_{k=p}^{T} \gamma^{k} r_{k} \mid s_{p} = s, \pi \right] \\
-  &= \m E \left[ r_{p} + \gamma G(\tau_{p+1}), \mid s_{p} = s, \pi \right]
-\end{align}
-
-If we define $p(s' \mid s, a) = P(\epsilon(s, a) = s')$ i.e. the probability of reaching state $s'$ from state $s$ by taking action $a$, we can further use the law of total probaility to get
-\begin{align}
-  v_{\pi}(s) &= \sum_{a} \pi(a \mid s) \sum_{s'} p(s' \mid s, a) \left( R(s, a) + \gamma \m E[G_{p+1} \mid s_{p} = s, \pi \right) \\
-             &= \sum_{a} \pi(a \mid s) \sum_{s'} p(s' \mid s, a) \left( R(s, a) + \gamma v_{\pi}(s') \right)
-\end{align}
-
-By shifting our focus slightly to consider the value of \emph{actions} instead of states, we can define an \emph{action-value} function, denoted $q_{\pi}(s, a) = \m E[G(\tau_{p}) \mid s_{p} = s, a_{p} = a, \pi]$.
-
-Using these we can define the \emph{optimal} value functions:
-
-\begin{definition}
-  \[v_{*}(s) = \max_{\pi} v_{\pi}(s)\] is called the \emph{optimal value function} and \[q_{*}(s, a) = \max_{\pi} q_{\pi}(s, a)\] is called the \emph{optimal action-valur function}
-\end{definition}
-
-These two functions can be expressed in terms of each other:
-\begin{align*}
-  v_{*}(s) &= \max_{\pi} v_{\pi}(s) \\
-           &= \max_{\pi} \m E[G(\tau_{p} \mid s_{p} = s, \pi)] \\
-           &= \max_{\pi} \sum_{a} \pi(a \mid s) \, \m E[G(\tau_{p}) \mid s_{p} = s, a_{p} = a, \pi] \\
-           &= \max_{\pi} \sum_{a} \pi(a \mid s) \, q_{\pi} (s, a) \\
-  &= \max_{a} q_{*}(s, a)
-\end{align*}
-and similarly we can get \[q_{*}(s, a) = R(s, a) + v_{*}(s')\]. These of course also satisfies the recursive relations from before:
-\begin{align*}
-  v_{*}(s) &= \max_{a} q_{*}(s, a) \\
-           &= \max_{a} \m E[G(\tau_{p}) \mid s_{p} = s, a_{p} = a, \pi_{*}] \\
-           &= \max_{a} \m E[r_{p} + \gamma v_{*}(s_{p+1}) \mid s_{p} = a, a_{p} = a, \pi_{*}] \\
-           &= \max_{a} \sum_{s'} p(s' \mid s, a) (R(s, a) + \gamma v_{*}(s') )
-\end{align*}
-which is called the Bellman equation for $v_{*}$. The Bellman equation for $q_{*}$ is
-\[q_{*}(s, a) = \sum_{a} p(s' \mid s, a) (R(s, a) + \gamma \max_{a'} q_{*}(s', a')).\]
-
-These equations inspires the learning equation
-\[V(s_{p}) = (1 - \alpha) V(s_{p}) + \alpha \max_{a} \{R(s_{p}, a) + \gamma V(s')\} \text{ where $s'= \epsilon(s_{p}, a)$}.\]
-
-Here, $\alpha$ is called the learning rate. Convergence of this learning equation is guaranteed by a general theorem in control theory, see \cite{cjch}.
-
-We get a similar update equation for Q-learning:
-
-\[Q(s_{p}, a_{p}) = (1 - \alpha) Q(s_{p}, a_{p}) + \alpha (R(s_{p}, a_{p}) + \gamma \max_{a} Q(s', a))\]
-
-\begin{example}
-  \begin{figure}
-    % https://q.uiver.app/?q=WzAsMyxbMCwwLCJcXGJveGVke0F9Il0sWzIsMCwiXFxib3hlZHtCfSJdLFsxLDIsIlxcYm94ZWR7Q30iXSxbMCwxLCIxNSIsMCx7ImN1cnZlIjotMX1dLFsxLDAsIjMiLDAseyJjdXJ2ZSI6LTF9XSxbMSwyLCIxIiwwLHsiY3VydmUiOi0xfV0sWzIsMSwiOCIsMCx7ImN1cnZlIjotMX1dLFsyLDAsIjUiLDJdXQ==
-    \[\begin{tikzcd}
-        {\boxed{A}} && {\boxed{B}} \\
-        \\
-        & {\boxed{C}}
-        \arrow["15", curve={height=-6pt}, from=1-1, to=1-3]
-        \arrow["3", curve={height=-6pt}, from=1-3, to=1-1]
-        \arrow["1", curve={height=-6pt}, from=1-3, to=3-2]
-        \arrow["8", curve={height=-6pt}, from=3-2, to=1-3]
-        \arrow["20"', from=3-2, to=1-1]
-      \end{tikzcd}\]
-    \caption{A simple graph-based environment}
-    \label{fig:env1}
-  \end{figure}
-
-  Consider the graph in figure \ref{fig:env1}. If the agent initially takes each possible action with equal probability, we might observe the trajectory $\tau = (A, B, C, A, B, A, B, C, B, C)$. With learning rate $\alpha = 0.5$ and decay $\gamma = 1$ we get the following updates:
-
-  \begin{tabular}{c c r | l c r}
-    $s$ & $s'$ & $r$ & Update & & \\ \hline
-    A & B & 15 & $Q(A, B) = \frac 1 2 0 + \frac 1 2 (15 + 0) $ & $=$&$ 7.50$ \\
-    B & C &  1 & $Q(B, C) = \frac 1 2 0 + \frac 1 2 ( 1 + 0) $ & $=$&$ 0.50$ \\
-    C & A &  5 & $Q(C, A) = \frac 1 2 0 + \frac 1 2 ( 20 + 7.5) $ & $=$&$ 13.70$ \\
-    A & B & 15 & $Q(A, B) = \frac 1 2 7.5 + \frac 1 2 (15 + 0.5) $ & $=$&$ 11.40$ \\
-    B & A &  3 & $Q(B, A) = \frac 1 2 0 + \frac 1 2 ( 3 + 11.4) $ & $=$&$ 7.20$ \\
-    A & B & 15 & $Q(A, B) = \frac 1 2 11.4 + \frac 1 2 (15 + 7.2) $ & $=$&$ 16.80$ \\
-    B & C &  1 & $Q(B, C) = \frac 1 2 0.5 + \frac 1 2 ( 1 + 13.7) $ & $=$&$ 5.70$ \\
-    C & B &  8 & $Q(C, B) = \frac 1 2 0 + \frac 1 2 ( 8 + 7.2) $ & $=$&$ 11.20$ \\
-    B & C &  1 & $Q(B, C) = \frac 1 2 5.7 + \frac 1 2 ( 1+ 13.7) $ & $=$&$ 10.10$ \\
-  \end{tabular}
-
-  Yielding the final values
-
-  \begin{tabular}{l c r}
-    $Q(A, B)$ & $=$ & 16.80\\
-    $Q(B, A)$ & $=$ & 7.20\\
-    $Q(B, C)$ & $=$ & 10.10\\
-    $Q(C, A)$ & $=$ & 13.70\\
-    $Q(C, B)$ & $=$ & 11.20\\
-  \end{tabular}
-
-  As we see, the agent have already learned the non-obvious but optimal tour $A \rightarrow B \rightarrow C  \rightarrow A \rightarrow ...$ since the large reward from going $C \rightarrow A$ is propagated backwards in line 7. 
-
-\end{example}
-
-
-\subsection{Deep Q-learning}
-The method described above is called tabular learning, as it stores every state-action mapping in a table. This becomes infeasible as the state- and action-space grows. Deep Q-learning attempts to approximate the Q-function with a single neural network. The change is simple, instead of directly updating $Q(s, a)$ as above we compute the loos $loss = (Q(s_{p}, a_{p}) - R(s_{p}, a_{p}) + \max_{a} Q(s_{p+1}, a))$ and use backpropagation to copmute the gradient of that loss function. Then we can use gradient descent to minimize the loss.
-
-
-\subsubsection{Experience replay}
-Normal Q-learning is a temporal-difference learning method, which means it only learns from the timestep it just took. Experience replay keeps track of previous experiences and uses them when doing an update. To do this, we keep a trajectory of the currect episode, sample some random times from it and perform gradient descent on every remembered timestep simultaneously. Specifically, for a random sample $D = \{t_{i}\} \subset \mathbb N$ of timesteps, we compute the vector
-\[G_{t} =  \begin{cases}
-    r_{t} + max_{a} Q(s_{t+1}, a) & \text{if $s_{t}$ is non-terminal} \\
-    r_{t} & \text{if $s_{t}$ is terminal}
-  \end{cases} \]
-for every $t \in D$ and let our loss-function be the euclidean distance from $G$ to the vector $H_{t} = Q(s_{t}, a_{t})$ for $t \in D$.
-
-There is no proven reason why experience replay should help learning. DeepMind provides that it reduces variance in the gradients, which would help stabilize the learning. I don't want to risk saying something wrong, so I'll just say that it seems to work and that's a good enough reason to use it.
-
-\subsection{Policy gradient}
-Value estimation and Q-learning had the nice property that there was in some sense a concrete function we learned, the value associated with something. Policy gradient is different and exploits the backpropagation algorithm. The idea is that instead of trying to approximate something that we know, compute an error function between our current agent and some observed data, we can just specify that some behaviour was good and have the neural network optimize towards doing that again.
-
-That was vague, so let's do some math. We have an agent with some parameters $\theta$ and a reward function $G(\tau)$ taking a trajectory $\tau$ and giving us a total reward for that trajectory. Since we want to optimize $E[G(\tau) \mid \theta]$ we can do that by taking the gradient wrt. $theta$ i.e. $\nabla_{\theta} E[G(\tau) \mid \theta]$. This expression is difficult to compute, so let's do some rearranging:
-
-\begin{equation} \label{policy_grad}
-\begin{aligned}
-  \nabla_{\theta} E[G(\tau) \mid \theta] &= \nabla_{\theta} \sum_{t}P(t \mid \theta) G(\tau) \\
-                                      &= \sum_{t} G(\tau) \nabla_{\theta} P(t \mid \theta)  \\
-                                      &= \sum_{t} G(\tau) P(t \mid \theta) \frac{\nabla_{\theta} P(t \mid \theta)}{P(t \mid \theta)} \\
-                                      &= \sum_{t} G(\tau) P(t \mid \theta) \nabla_{\theta} \log P(t \mid \theta) && \text{since $\frac{\nabla_{\theta} x}{x} = \nabla_{\theta} \log x$.} \\
-                                      &= E[G(\tau) \nabla_{\theta} \log P(t \mid \theta)]
-\end{aligned}
-\end{equation}
-
-Now we're in good shape. Since $\log$ is a monotonically growing function we now get, that if $G(\tau) > 0$ we can increase $E[G(\tau) \mid \theta]$ by increasing $P(t \mid \theta)$, at least locally. Similarly, if $G(\tau) < 0$, decreasing $P(T \mid \theta)$ will increase $E[G(\tau) \mid \theta]$.
-
-\begin{remark}
-  The above derivation can be done more generally than we've done in \ref{policy_grad}. By assuming an arbitrary, not necessarily discrete, probility distribution of states, we could replace the sum with an integral for a more general derivation.
-\end{remark}
-
-Right, so how do we increase the probability of a trajectory? Intuitively, we just increase the probability of the actions the trajectory consists of, and this turns out to be sufficient. Since each action is taken independently of previous actions, we have \[P(t \mid \theta) = P(s_{0}) \prod_{i=0}^{T-1} \pi_{\theta}(a_{i} \mid s_{i}) P(s_{i+1}, r_{i} \mid s_{i}, a_{i})\] where $\pi_{\theta}$ gives the probability distribution of actions that the agent is sampling from. Taking the logarithm and gradient on both sides, we get that \[\nabla_{\theta} \log P(t \mid \theta) = \nabla_{\theta} \sum_{i=0}^{T-1} \log \pi_{\theta}(a_{i} \mid s_{i})\] and thus, by taking this together with \ref{policy_grad} that \[\nabla_{\theta} E[G(\tau) \mid \theta] = E\left[ G(\tau) \nabla_{\theta} \sum_{i=0}^{T-1} \log \pi_{\theta} (a_{i} \mid s_{i}) \right]\] and this finally gives us a good way to update our neural network: simply increase $\pi_{\theta} (a_{i} \mid s_{i})$ by following the gradient of the neural network.
-
-
-
-Now, this is great if we have direct access to a gradient descent optimizer. However, most modern machine learning frameworks is fixed to the model of minimizing an error function. The solution is very simple; to maximize $G(\tau) \sum_{i} \log \pi_{\theta} (s_{i} \mid s_{i})$ we can minimize $-G(\tau) \sum_{i} \log \pi_{\theta} (a_{i} \mid s_{i})$. Thus our loss could be just that. A small tweak would be to use the inner product between the rewards vector and the log-probabilities, i.e. $\overrightarrow r \cdot {\log \pi(\overrightarrow a \mid \overrightarrow s)}$ instead of just the product of the sums. This ensures that if we took an unlikely action and it paid off, we encourage that more.
-
-\subsubsection{Normalization \& Advantage estimation}
-There are a number of challenges when doing policy gradient learning in practise. One is that rewards are often very high variance and not balanced. For example, if we only care about achieving a goal without the possibility of failure, every reward will be positive so every action will be encouraged. The reason things still work in this situation is that actions leading to higher rewards will lead to steeper gradients and be ``encouraged more''. In this case we can better performance by normalizing rewards by subtracting the mean and dividing by the standard deviation. This of course only works if we use the inner product loss described above, as the loss would otherwise just be 0.
-
-\begin{figure} 
-% https://q.uiver.app/?q=WzAsNSxbMCwxLCJcXGJveGVke3NfMH0iXSxbMiwwLCJcXGJveGVke3NfMX0iXSxbNCwwLCJcXGJveGVke3NfMn0iXSxbMywyLCJcXGJveGVke3NfM30iXSxbNiwxLCJcXGJveGVke3NfNH0iXSxbMCwxLCIzIl0sWzAsMywiMSIsMl0sWzEsMiwiMSJdLFsyLDQsIjEiXSxbMyw0LCIxMCIsMl1d
-\[\begin{tikzcd}
-	&& {\boxed{s_1}} && {\boxed{s_2}} \\
-	{\boxed{s_0}} &&&&&& {\boxed{s_4}} \\
-	&&& {\boxed{s_3}}
-	\arrow["3", from=2-1, to=1-3]
-	\arrow["1"', from=2-1, to=3-4]
-	\arrow["1", from=1-3, to=1-5]
-	\arrow["1", from=1-5, to=2-7]
-	\arrow["10"', from=3-4, to=2-7]
-\end{tikzcd}\]
-\caption{Example of a situation in which normalization of rewards is a bad idea.}
-\label{fig:bad_norm}
-\end{figure}
-
-This method, however, is not always a good idea. Consider for example the graph in figure \ref{fig:bad_norm} with two possible reward trajectories: $r_{1} = (1, 10)$ and $r_{2} = (3, 1, 1)$. Normalized, these become $r_{1}' = (-0.99, 0.99)$ while $r_{2}' = (1.41, -0.7, -0.7)$, hence we encourage the second trajectory. This method works if we can take actions independently of previous actions but in other cases it might not. It gets better if we maintain a running average, but it can still fail.
-
-Another way of normalizing is by comparing to a baseline. We could train a value estimator alongside our policy gradient network and use the predictions from this network to normalize the observed rewards. That is, if we observe a trajectory $\tau = (s_{0}, a_{0}, r_{0}, s_{1}, a_{1}, r_{1}, \dots)$ and we have network approximating $r'_{p} = \m E[r_{p} \mid s_{p}]$ we can normalize to get $\tau' = (s_{0}, a_{0}, r_{0} - r'_{0}, \dots)$. If the approximation is good, this would reduce the variance.
-
-
-\subsection{Advantage estimation}
-An alternative to normalization is \emph{advantage estimation}. Here, we compute a \emph{value function} of each state and normalize using the value difference. Specifically, given a trajectory $\tau = (\overrightarrow s_{t}, \overrightarrow a_{t}, \overrightarrow r_{t})$ we compute values $v_{t} = V(s_{t})$ and new rewards $r'_{t} = r_{t} + (v_{t+1} - v_{t})$. The idea is that if we get a good state, where many actions yields a high reward, we want to rescale those rewards to ensure we still pick the best and not just any of the good ones.
-
-A variation on advantage estimation is \emph{generalized} advantage estimation using the formula $r'_{t} = r_{t} + (v_{t+1} - v_{t}) + \lambda r_{t+1}$, introduced in \cite{GAE}.
+The structure of this report is as follows: first, we'll discuss the use of reinforcement learning, a branch of deep learning used by Peifer et al. We'll cover both the conceptual framework, as well as two particular techniques: Q-learning and policy gradients. Next, a brief overview of Gröner bases, their uses and how to compute them. Third part covers our experimental results featuring both an evaluation of existing heuristics as well as our results.
 
 \section{Gröbner bases}
 
@@ -480,7 +247,7 @@ We fix a field $k$ and consider the polynomial ring $R = k[x_{1}, \dots, x_{n}]$
 
 Fix a \emph{term order} which is a well-order relation $>$ on $\mathbb N^{n}$ such that $a > b$ implies $a + c > b + c$ for any $a, b, c \in \mathbb N^{n}$. This naturally extends to a so called \emph{monomial order} on monomials $\{x^{v} = x_{1}^{v_{1}} \cdots x_{n}^{v_{n}} \mid v \in \mathbb N^{n}\}$ by comparing exponent vectors of the monomials. We'll write $>$ for both orders.
 
-There are two common term orders: lexicographic and grevlex. Lexicographic has $a > b$ if there exists $k$ s.t. $a_{i} = b_{i}$ for $i < k$ and $a_{k} > b_{k}$. This is the usual ``alphabetix order'' on tuples. Grevlex ordering is often used in implementations using Gröbner bases and has $a > b$ if $\sum_{i} a_{i} > \sum_{j} b_{j}$ or   $\sum_{i} a_{i} = \sum_{j} b_{j}$ and the last non-zero entry of $a - b$ is negative. 
+There are two common term orders: lexicographic and grevlex. Lexicographic has $a > b$ if there exists $k$ s.t. $a_{i} = b_{i}$ for $i < k$ and $a_{k} > b_{k}$. This is the usual ``alphabetix order'' on tuples. Grevlex ordering is often used in implementations using Gröbner bases and has $a > b$ if $\sum_{i} a_{i} > \sum_{j} b_{j}$ or   $\sum_{i} a_{i} = \sum_{j} b_{j}$ and the last non-zero entry of $a - b$ is negative.
 
 Given a monomial order we can define the \emph{initial term} and the S-polynomial.
 
@@ -506,9 +273,9 @@ Now, a naive division algorithm would look like this:
     \label{alg:div}
 \end{algorithm}
 
-This algorithm terminates since the inistal term of $r$ is strictly descreasing with respect to $>$. However, this algorithm has some problems. In particular, we do not always get that $reduce(f, F) = 0$ when $f$ lies in the ideal generated by $F$, as we would expect. This is due to the choice of which polynomial to reduce with in line 3.
+This algorithm terminates since the initial term of $r$ is strictly descreasing with respect to $>$. However, this algorithm has some problems. In particular, we do not always get that $reduce(f, F) = 0$ when $f$ lies in the ideal generated by $F$, as we would expect. This is due to the choice of which polynomial to reduce with in line 3.
 
-An example where this does not hold without a Gröbner basis is example 5.4.3 in NL.
+An example where this does not hold without a Gröbner basis is \colorbox{red}{example 5.4.3 in NL}.
 
 Now, we're ready to present Gröbner bases and the theorem that makes them so important:
 
@@ -527,7 +294,7 @@ Now, we're ready to present Gröbner bases and the theorem that makes them so im
   If $f \in I$ and $f - r = h \in I$ then $r = f - h \in I$. But as guaranteed by the division algorithm, there is no $f_{i} \in G$ where $in(f_{i}) \mid in(r)$ even though $G$ is a Gröbner basis. The only element in $I$ not subject to the Gröbner basis constraint is zero, thus $r$ must be zero.
 \end{proof}
 
-So, Gröbner bases are great, but how do we construct them? Do they even exist for every ideal? They do exist and we have an algorithm called Buchbergers algorithm to find them, bt first we need a construction called the S-polynomial or syzygy polynomial. 
+So, Gröbner bases are great, but how do we construct them? Do they even exist for every ideal? They do exist and we have an algorithm called Buchbergers algorithm to find them, bt first we need a construction called the S-polynomial or syzygy polynomial.
 
 \begin{definition}
   The S-polynomial of two polynomials $f$ and $g$ is denoted $S(f, g) = \frac{x^{w}}{in(f)} f - \frac{x^{w}}{in(g)} g$ where $x^{w} = lcm(in(f), in(g))$ is a least common multiple of $f$ and $g$.
@@ -579,7 +346,7 @@ There are a number of standard selection strategies:
 \begin{itemize}
   \item[Random] Pick a random pair uniformly.
 
-  \item[First] Pick the lexicographically smallest pair, where the order of polynomials is given by their order in $G$. 
+  \item[First] Pick the lexicographically smallest pair, where the order of polynomials is given by their order in $G$.
 
   \item[Queue] Treat $P$ as a queue and select the pair that was added first.
 
@@ -598,13 +365,269 @@ There are a number of standard selection strategies:
 \subsection{A better \emph{update}}  \label{sec:update}
 In the Buchberger algorithm, a pair $(f, g)$ will be removed if $\text{reduce}(S(f, g), G) = 0$. However, this is computationally expensive test. Fortunately, there are some easier tests that can eliminate a large number of pairs. I'll describe the tests described in Gebauer \& Möller.
 
-When adding a reduced S-polynomial $r$ to the basis, i.e. when calling $\text{update}(P, G, r)$, consider every pair $(f, g) \in P$ and denote $\gamma = lcm(i(f), i(g))$. Then we can remove $(f, g)$ from $P$ if $i(r) \mid \gamma$ and $\gamma \neq lcm(i(f), i(r))$ and $gamma \neq lcm(i(g), i(r))$. Indeed, in that case we would have $lcm(i(f), i(r)) \mid \gamma$ and $lcm(i(g), i(r)) \mid \gamma$. Thus writing $\gamma = q_{f} lcm(i(f), i(r)) = q_{g} lcm(i(g), i(r))$ we get that $S(f, g) = q_{f}S(f, r) - q_{g} S(g, r)$. This means $S(f, g)$ is redundant in a basis containing $S(f, r)$ and $S(g, r)$.
+\subsubsection{Operational description}
+Gebauer \& Möller reduction is performed as part of the procedure $\text{update}(P, G, r)$. First, in the pair set $P$ we remove every pair $(f, g)$ where $in(r) | \lcm(in(f), in(g))$ and $\lcm(in(f), in(r)) \neq \lcm(in(f), in(g)) \neq \lcm(in(g), in(r))$.
 
-Next, we should add all pairs $(f, r)$ where $f \in G$. However, also here we can skip some immediately. First of all, for any two pairs $(f, r)$ and $(g, r)$ where $lcm(i(f), i(r)) \mid lcm(i(g), i(r))$ we can obviously remove $(g, r)$.
+Next, consider the set $P' = \{(f, r) \mid f \in G\}$. These are all the pairs we should naively add to $P$. Partition $P'$ into equivalence classes using the equivalence realation $(f, r) \sim (g, r) \Longleftrightarrow \lcm(in(f), in(r)) = \lcm(in(g), in(r))$. Remove every equivalence class containing no element $(f, r)$ satisfying $\lcm(in(f), in(r)) = in(f) in(r)$ and take a representative from each remaining equivalence class. Let $P''$ be this set of representatives and let $P \cup P''$ be the result of $\text{update}(P, G, r)$.
 
-After this, consider the equivalence realation $(f, r) \sim (g, r)$ if $lcm(i(f), i(r)) = lcm(i(g), i(r))$. We only need one representative from each equivalence class generated by this relation.
 
-Finally, if $i(f)i(r) = lcm(i(f), i(r))$ then this pair can also be removed, as $S(f, r)$ would reduce to $0$.
+\subsubsection{Justification and proof}
+Simply put, Gebaur\& Möller reduction consists of reducing a Gröbner basis. Once a Gröbner basis is constructed, we may throw our any redundant element. This process is described above and the proof that this maintains the Gröbner basis property can be found in \cite{NL} section 5.8.
+
+For the setup we need to extend the concept of Gröbner bases to free modules over a polynomial ring. R be a multinomial ring in $n$ variables over a field $k$ and $e_{1}, \dots, e_{m}$ be the canonical basis of $R^{m}$. Since every element of $R^{m}$ is a $k$-linear combination of elements of the form $x^{v}e_{i}$, $v \in \m N^{n}$, we call these $x^{v}e_{i}$ for monomials. Now, the definition of Gröbner bases require two more parts: a monomial order and a divisability test. Monomial orders work the same way, they're a total order satisfying \[x^{v_{1}}e_i < x^{v_{2}}e_{j} \Longrightarrow x^{v_{1} + v} e_{i} < x^{v_{2} + v} e_{j}\] for all $v \in \m N^{n}$. We say that $x^{v_{1}}e_{i}$ divides $x^{v_{2}}e_{j}$ iff $i=j$ and $x^{v_{1}}$ divides $x^{v_{2}}$. Now, the definition of a Gröbner basis is the same, and we will repeat it here: a Gröbner basis for a submodule $M \subset R^{m}$ is a set of elements $F = \{m_{1}, \dots, m_{t}\} \subset M$ such that $in(m_{i})$ divides $in(m)$ for all $m \in M \setminus \{0\}$.
+
+Now, consider the ideal of monomials $I = \tuple{x^{v_{1}}, \dots, x^{v_{m}}} \subset R$ and the natural surjection $p : R^{m} \to I$ sending $e_{i}$ to $x^{v_{i}}$. Now, let $K$ be the kernel of $p$ and notice that the syzygies in $I$ are a basis of $K$.
+
+\begin{example}
+If $I = \tuple{x, y, z}$ then $K$ will have a basis consisting of the syzygies $\{x e_{2} - y e_{1}, x e_{3} - x e_{1}, y e_{3} - z e_{2}\}$.
+\end{example}
+
+More generally, the elements \[S_{ij} = x^{\lcm(v_{i}, v_{j}) - v_{j}} e_{j} - x^{\lcm(v_{i}, v_{j}) - v_{i}} e_{i}, \, \, 1 \leq i < j \leq m\] are basis elements of $K$. However, this basis is usually not minimal. Now, we need two propositions, the first due to Schreyer.
+
+\begin{theorem}
+ There exists a monomial order called the Schreyer order such that set $\{S_{ij} \mid 1 \leq i < j \leq m\}$ is a Gröbner basis for $K$ over this order.
+\end{theorem}
+
+The second is proposition 2.9.9 from \cite{IVA}.
+
+\begin{theorem}
+  Let $G = \{g_{1}, \dots, g_{m}\}$ be a basis for an ideal $I$. Then $G$ is a Gröbner basis for $I$ iff for every basis element of the syzygies of G $S = \sum_{i = 1}^{m} x^{u_{i}} e_{i}$ we have $\sum_{i=1}^{m} x^{u_{i}} g_{i} \to_{G} 0$.
+\end{theorem}
+
+Now, this is a refinement of the Buchberger S-criterion. It is therefor enough to reduce the S-pairs corresponding to any Gröbner basis of the syzygies. In particular, we may take the basis $\{S_{ij} \mid 1 \leq i < j \leq m\}$ and reduce it to a minimal Gröbner basis before reducing mod $G$ and adding to $G$.
+
+
+\section{Abstract framework of deep learning}
+
+We would like to use modern advances in machine learning to learn a better selection strategy for Buchbergers algorithm. However, to do so we need some machinery. Since we need to use the \emph{select}-function multiple times, we need to use a branch of machine learning called \emph{reinforcement learning}.
+
+\subsection{Reinforcement-learning and Markov Decision Processes}
+
+Constructing Gobner bases can be seen as an interaction between an agent and an environment: we pick a pair to reduce, perform polynomial reduction, add some new pairs to the set of pairs and go again. We want to do the least amount of work when we're done. This interaction can be modeled using Markov decision processes.
+
+A Markov decision process (MPD for short) is an interaction between an environment and an agent. At timestep $t = 0, 1, 2, \dots$ the agent recieves a \emph{state}, $S_{t}$ and selects an \emph{action}, $a_{t}$. The agent then recives a \emph{reward}, $r_{t+1}$ and a new state $s_{t+1}$ and the process repeats.
+
+% https://q.uiver.app/?q=WzAsMixbMCwwLCJcXHRleHR7QWdlbnR9Il0sWzAsMiwiXFx0ZXh0e0Vudmlyb25tZW50fSJdLFswLDEsIlxcdGV4dHthY3Rpb259IFxcXFwgYV90IiwwLHsib2Zmc2V0IjotMSwiY3VydmUiOi01fV0sWzEsMCwiXFx0ZXh0e3N0YXRlfSBcXFxcIHNfdCIsMCx7Im9mZnNldCI6LTUsImN1cnZlIjotNX1dLFsxLDAsIlxcdGV4dHtyZXdhcmR9IFxcXFwgcl90IiwyLHsiY3VydmUiOi01fV1d
+\[\begin{tikzcd}
+	{\text{Agent}} \\
+	\\
+	{\text{Environment}}
+	\arrow["{\text{action: } \\ a_t}", shift left=1, curve={height=-30pt}, from=1-1, to=3-1]
+	\arrow["{\text{state: } \\ s_t}", shift left=5, curve={height=-30pt}, from=3-1, to=1-1]
+	\arrow["{\text{reward: } \\ r_t}"', curve={height=-30pt}, from=3-1, to=1-1]
+\end{tikzcd}\]
+
+This gives rise to a \emph{trajectory} which looks like this:
+
+\[\tau = s_{0}, a_{0}, r_{1}, s_{1}, a_{1}, r_{2}, s_{2}, a_{2}, \dots\]
+
+We'll sometimes denote $\tau_{p} = s_{p}, a_{p}, r_{p+1}, s_{p+1}, \dots$.
+
+Formally, this can be described in terms of the following definition:
+
+\begin{definition}
+  \emph{Environment and policy}
+  \begin{itemize}
+      \item Fix two non-empty, finite sets $S$ and $R \subset \m R$ and a family of non-empty finite sets $A_{s}$ for all $s \in S$. We call $S$ the \emph{state-space}, $A_{s}$ an \emph{action-space} and $R$ the \emph{reward space}. Then an \emph{environment} is a probability distribution \[p(s', r \mid s, a) = P(s_{t+1} = s', r_{t+1} = r \mid s_{t} = s, a_{t} = a)\] for all $s, s' \in S$, $r \in R$ and $a \in A(s)$.
+
+      \item Given an environment, an \emph{policy} is a propability distribution $\pi(a \mid s)$ of taking an action $a$ given a state $s$.
+  \end{itemize}
+\end{definition}
+
+An important property of a MPD is that the probability of $s_{t}$ depends only on $s_{t-1}$ and $a_{t-1}$, not all of the earlier states and actions. Do also note, that we can derive marginal probabilities from the $p-function$, for example the probability of reaching a certain state \[p(s' \mid s, a) = P(s_{t+1} = s' \mid s_{t} = s, a_{t} = a) = \sum_{r \in R} p(s', r \mid s, a).\]
+
+Now, an agent can interact with an environment by choosing actions and revieving rewards. Such an interation leads to a trajectory $\tau = s_{0}, a_{0}, r_{1}, s_{1}, a_{1}, r_{2}, s_{2}, a_{2}, \dots$. We're interested in minimizing the total reward of the trajectory or the \emph{return} \[G(\tau) := \sum_{t=1}^{\infty} \gamma^{t} r_{t}\] where $0 < \gamma < 1$ is put in place to ensure convergence of the infinite series. However, if the rewards are eventually always zero, we may choose $\gamma = 1$. Usually a value around 0.99 is chosen for $\gamma$.
+
+\subsection{Pair selection as a Markov Decision Process}
+The problem of pair selection is modeled as a Markov Decision Process. During a run of Buchbergers Algorithm the \emph{select} subroutine is implemented by the agent. At timestep $t$ the agent sees the state $P_{t}$ which is the current set of polynomial pairs. The agent must then choose a pair $a_{t} \in P_{t}$ which is fed back into Buchbergers algorithm as the result of \emph{select}. The environment then updates by removing $p$ from $P$, reducing the correpsonding and S-polynomial and updating $G$ and $P$.
+
+The reward $r_{t}$ given for the action $a_{t}$ is $-1$ times the number of polynomial additions performed when reducing $a_{t}$. This metric is chosen since it is the most expensive computation and it serves as a proxy for total computation.
+
+This loops until a complete Gröbner basis is constructed at timestep $T$, yielding the trajectory $\tau = (P_{0}, a_{0}, r_{0}, \dots, P_{T}, a_{T}, r_{T})$. The goal of the agent is to maximize the exprected return $\m E[\sum_{t=1}^{T} r_{t}]$ which is minimizing the number of polynomial additions.
+
+It is not immidiately obvious that the state-space is finite. However, the running time of Buchbergers algorithm has been shown to be worst-case $d^{2^{n+\mathcal{O}(1)}}$ where $n$ is the number of variables and $d$ is the maximum total degree of any generator. This means the set $P$ of polynomial pairs can at most grow that large. Since at any step there is a finite number of actions and the algorithm terminates after a bounded number of actions, the number of possible states is finite. It's very large, but finite.
+
+\section{Learning strategies}
+The abstract framework of Markov Decision Processes is a rather simple idea. And indeed, that is not where the magic of reinforcement learning is. Reinforcement learning solves the challenge of credit assignment. We have sampled some trajectories, some leading to a high reward and some to a lower reward. How do we know what actions were responsible for the high rewards? How should we update the agent to increase the future rewards? In this section we'll describe two approaches: value estimation and policy gradients as well as some standard ``tricks'' that are used to improve performance.
+
+\subsection{Value-estimation and Q-learning}
+Most classical reinforcement learning is about estimating value functions -- how good a state or action is. For example, we can define the \emph{value} of a state $s$ given an agent $\pi$ to be \[v_{\pi}(s) = \mathbb E \left[ G(\tau_{p}) \mid s_{p} = s, \pi \right] = \m E \left[ \sum_{k=p}^{T} \gamma^{k} r_{k} \mid s_{p} = s, \pi \right].\] Here we sample the actions $a_{t}$ from the probability distribution given by $\pi$.
+
+The value-function can be expressed recursively:
+\begin{align}
+  v_{\pi}(s) &= \m E[G(\tau_{p}) \mid s_{p} = s, \pi] \\
+             &= \m E\left[ \sum_{k=p}^{T} \gamma^{k} r_{k} \mid s_{p} = s, \pi \right] \\
+  &= \m E \left[ r_{p} + \gamma G(\tau_{p+1}), \mid s_{p} = s, \pi \right]
+\end{align}
+
+Now, we can further use the law of total probality twice to get
+\begin{align}
+  v_{\pi}(s) &= \m E[r_{p} + \gamma G(\tau_{p+1}) \mid s_{p} = s] \\
+             &= \sum_{a} \pi(a \mid s) \m E[r_{p} + \gamma G(\tau_{p+1}) \mid s_{p} = s] \\
+             &= \sum_{a} \pi(a \mid s) \sum_{s', r} p(s', r \mid s, a) \m E[r + \gamma G(\tau_{p+1}) \mid s_{p+1} = s'] \\
+             &= \sum_{a} \pi(a \mid s) \sum_{s', r} p(s', r \mid s, a) ( r + \gamma \m E[G(\tau_{p+1}) \mid s_{p+1} = s'] )\\
+             &= \sum_{a} \pi(a \mid s) \sum_{s', r} p(s', r \mid s, a) (r + \gamma v_{\pi}(s'))
+\end{align}
+
+By shifting our focus slightly to consider the value of \emph{actions} instead of states, we can define an \emph{action-value} function, denoted \[q_{\pi}(s, a) = \m E[G(\tau_{p}) \mid s_{p} = s, a_{p} = a, \pi]. \]
+
+Using these we can define the \emph{optimal} value functions:
+
+\begin{definition}
+  \[v_{*}(s) = \max_{\pi} v_{\pi}(s)\] is called the \emph{optimal value function} and \[q_{*}(s, a) = \max_{\pi} q_{\pi}(s, a)\] is called the \emph{optimal action-value function}
+\end{definition}
+
+These two functions can be expressed in terms of each other:
+\begin{align*}
+  v_{*}(s) &= \max_{\pi} v_{\pi}(s) \\
+           &= \max_{\pi} \m E[G(\tau_{p} \mid s_{p} = s, \pi)] \\
+           &= \max_{\pi} \sum_{a} \pi(a \mid s) \, \m E[G(\tau_{p}) \mid s_{p} = s, a_{p} = a, \pi] \\
+           &= \max_{\pi} \sum_{a} \pi(a \mid s) \, q_{\pi} (s, a) \\
+  &= \max_{a} q_{*}(s, a)
+\end{align*}
+and similarly we can get \[q_{*}(s, a) = R(s, a) + v_{*}(s').\] These of course also satisfies the recursive relations from before:
+\begin{align*}
+  v_{*}(s) &= \max_{a} q_{*}(s, a) \\
+           &= \max_{a} \m E[G(\tau_{p}) \mid s_{p} = s, a_{p} = a, \pi_{*}] \\
+           &= \max_{a} \m E[r_{p} + \gamma v_{*}(s_{p+1}) \mid s_{p} = a, a_{p} = a, \pi_{*}] \\
+           &= \max_{a} \sum_{s', r} p(s' \mid s, a) (r + \gamma v_{*}(s') )
+\end{align*}
+which is called the Bellman equation for $v_{*}$. The Bellman equation for $q_{*}$ is
+\[q_{*}(s, a) = \sum_{s', r} p(s', r \mid s, a) (r + \gamma \max_{a'} q_{*}(s', a')).\]
+
+These equations inspires the learning equation
+\[V(s_{p}) = (1 - \alpha) V(s_{p}) + \alpha \max_{a} \{r_{p+1} + \gamma V(s_{p+1})\}.\]
+
+Here, $\alpha$ is called the learning rate. Convergence of this learning equation is guaranteed by a general theorem in control theory, see \cite{cjch}.
+
+We get a similar update equation for Q-learning:
+
+\[Q(s_{p}, a_{p}) = (1 - \alpha) Q(s_{p}, a_{p}) + \alpha (r_{p+1} + \gamma \max_{a} Q(s_{p+1}, a))\]
+
+\begin{example}
+  \begin{figure}
+    % https://q.uiver.app/?q=WzAsMyxbMCwwLCJcXGJveGVke0F9Il0sWzIsMCwiXFxib3hlZHtCfSJdLFsxLDIsIlxcYm94ZWR7Q30iXSxbMCwxLCIxNSIsMCx7ImN1cnZlIjotMX1dLFsxLDAsIjMiLDAseyJjdXJ2ZSI6LTF9XSxbMSwyLCIxIiwwLHsiY3VydmUiOi0xfV0sWzIsMSwiOCIsMCx7ImN1cnZlIjotMX1dLFsyLDAsIjUiLDJdXQ==
+    \[\begin{tikzcd}
+        {\boxed{A}} && {\boxed{B}} \\
+        \\
+        & {\boxed{C}}
+        \arrow["15", curve={height=-6pt}, from=1-1, to=1-3]
+        \arrow["3", curve={height=-6pt}, from=1-3, to=1-1]
+        \arrow["1", curve={height=-6pt}, from=1-3, to=3-2]
+        \arrow["8", curve={height=-6pt}, from=3-2, to=1-3]
+        \arrow["20"', from=3-2, to=1-1]
+      \end{tikzcd}\]
+    \caption{A simple graph-based environment}
+    \label{fig:env1}
+  \end{figure}
+
+  Consider the graph in figure \ref{fig:env1}. If the agent initially takes each possible action with equal probability, we might observe the trajectory $\tau = (A, B, C, A, B, A, B, C, B, C)$. With learning rate $\alpha = 0.5$ and decay $\gamma = 1$ we get the following updates:
+
+  \begin{tabular}{c c r | l c r}
+    $s$ & $s'$ & $r$ & Update & & \\ \hline
+    A & B & 15 & $Q(A, B) = \frac 1 2 0 + \frac 1 2 (15 + 0) $ & $=$&$ 7.50$ \\
+    B & C &  1 & $Q(B, C) = \frac 1 2 0 + \frac 1 2 ( 1 + 0) $ & $=$&$ 0.50$ \\
+    C & A &  5 & $Q(C, A) = \frac 1 2 0 + \frac 1 2 ( 20 + 7.5) $ & $=$&$ 13.70$ \\
+    A & B & 15 & $Q(A, B) = \frac 1 2 7.5 + \frac 1 2 (15 + 0.5) $ & $=$&$ 11.40$ \\
+    B & A &  3 & $Q(B, A) = \frac 1 2 0 + \frac 1 2 ( 3 + 11.4) $ & $=$&$ 7.20$ \\
+    A & B & 15 & $Q(A, B) = \frac 1 2 11.4 + \frac 1 2 (15 + 7.2) $ & $=$&$ 16.80$ \\
+    B & C &  1 & $Q(B, C) = \frac 1 2 0.5 + \frac 1 2 ( 1 + 13.7) $ & $=$&$ 5.70$ \\
+    C & B &  8 & $Q(C, B) = \frac 1 2 0 + \frac 1 2 ( 8 + 7.2) $ & $=$&$ 11.20$ \\
+    B & C &  1 & $Q(B, C) = \frac 1 2 5.7 + \frac 1 2 ( 1+ 13.7) $ & $=$&$ 10.10$ \\
+  \end{tabular}
+
+  Yielding the final values
+
+  \begin{tabular}{l c r}
+    $Q(A, B)$ & $=$ & 16.80\\
+    $Q(B, A)$ & $=$ & 7.20\\
+    $Q(B, C)$ & $=$ & 10.10\\
+    $Q(C, A)$ & $=$ & 13.70\\
+    $Q(C, B)$ & $=$ & 11.20\\
+  \end{tabular}
+
+  As we see, the agent have already learned the non-obvious but optimal tour $A \rightarrow B \rightarrow C  \rightarrow A \rightarrow ...$ since the large reward from going $C \rightarrow A$ is propagated backwards in line 7. 
+\end{example}
+
+
+\subsection{Deep Q-learning}
+The method described above is called tabular learning, as it stores every state-action mapping in a table. This becomes infeasible as the state- and action-space grows. Deep Q-learning attempts to approximate the Q-function with a single neural network. The change is simple, instead of directly updating $Q(s, a)$ as above we compute the loss \[loss = (Q(s_{p}, a_{p}) - R(s_{p}, a_{p}) + \max_{a} Q(s_{p+1}, a))\] and use backpropagation to copmute the gradient of that loss function. Then we can use gradient descent to minimize the loss.
+
+Deep Q-learning got its first big success with the program TD-gammon by Gerald Tesauro in 1992. TD-Gammon learned to play backgammon just below the level of expert humans using Q-learning. The remarkable thing is that, not only did it train only by playing against itself, it had no hardcoded heuristics to guide it. It got a score when the game was over and no other feedback during the game.
+
+\subsubsection{Experience replay}
+Even though TD-Gammon was a huge success, it took a long time before similar results was seen in other games. It wasn't before 2013 that DeepMind succeded in learning sveeral classic Atari games using Q-learning. Their secret ingredient was \emph{experience replay}.
+
+Normal Q-learning is a temporal-difference learning method, which means it only learns from the timestep it just took. Experience replay keeps track of previous experiences and uses them when doing an update. To do this, we keep a trajectory of the currect episode, sample some random times from it and perform gradient descent on every remembered timestep simultaneously. Specifically, for a random sample $D = \{t_{i}\} \subset \mathbb N$ of timesteps, we compute the vector
+\[G_{t} =  \begin{cases}
+    r_{t} + max_{a} Q(s_{t+1}, a) & \text{if $s_{t}$ is non-terminal} \\
+    r_{t} & \text{if $s_{t}$ is terminal}
+  \end{cases} \]
+for every $t \in D$ and let our loss-function be the euclidean distance from $G$ to the vector $H_{t} = Q(s_{t}, a_{t})$ for $t \in D$.
+
+While there is no proven reason why this should aid learning, DeepMind provides three reasons: First, it utilizes the data more efficiently by using each timestep in several parameter updates which ought to speed up the learning. Second, rewards are often correlated between consecutive steps. For example if we're trying to balance, we're not suddely out of balance. Thus, rewards will have a positive correlation with previous rewards. Taking samples breaks up these correlations, which reduces the variance between updates. Third, they theorize that, since the policy updates with the estimated Q-function, there could some feedback-loops between the agent and the samples leading to oscillations and potentially divergence. Using experience replay could smooth out these feedbacks.
+
+Whatever the reason, experience replay have turned out to be a very important part of succesful Q-learning.
+
+\subsection{Policy gradient}
+Value estimation and Q-learning had the nice property that there was in some sense a concrete function we learned, the value associated with something. Policy gradient is different and exploits the backpropagation algorithm. The idea is that instead of trying to approximate something that we know, compute an error function between our current agent and some observed data, we can just specify that some behaviour was good and have the neural network optimize towards doing that again.
+
+That was vague, so let's do some math. We have an agent with some parameters $\theta$ and a reward function $G(\tau)$ taking a trajectory $\tau$ and giving us a total reward for that trajectory. Since we want to optimize $E[G(\tau) \mid \theta]$ we can do that by taking the gradient wrt. $theta$ i.e. $\nabla_{\theta} E[G(\tau) \mid \theta]$. This expression is difficult to compute, so let's do some rearranging:
+
+\begin{equation} \label{policy_grad}
+\begin{aligned}
+  \nabla_{\theta} E[G(\tau) \mid \theta] &= \nabla_{\theta} \sum_{t}P(t \mid \theta) G(\tau) \\
+                                      &= \sum_{t} G(\tau) \nabla_{\theta} P(t \mid \theta)  \\
+                                      &= \sum_{t} G(\tau) P(t \mid \theta) \frac{\nabla_{\theta} P(t \mid \theta)}{P(t \mid \theta)} \\
+                                      &= \sum_{t} G(\tau) P(t \mid \theta) \nabla_{\theta} \log P(t \mid \theta) && \text{since $\frac{\nabla_{\theta} x}{x} = \nabla_{\theta} \log x$.} \\
+                                      &= E[G(\tau) \nabla_{\theta} \log P(t \mid \theta)]
+\end{aligned}
+\end{equation}
+
+Now we're in good shape. Since $\log$ is a monotonically growing function we now get, that if $G(\tau) > 0$ we can increase $E[G(\tau) \mid \theta]$ by increasing $P(t \mid \theta)$, at least locally. Similarly, if $G(\tau) < 0$, decreasing $P(T \mid \theta)$ will increase $E[G(\tau) \mid \theta]$.
+
+\begin{remark}
+  The above derivation can be done more generally than we've done in \ref{policy_grad}. By assuming an arbitrary, not necessarily discrete, probility distribution of states, we could replace the sum with an integral for a more general derivation.
+\end{remark}
+
+Right, so how do we increase the probability of a trajectory? Intuitively, we just increase the probability of the actions the trajectory consists of, and this turns out to be sufficient. Since each action is taken independently of previous actions, we have \[P(t \mid \theta) = P(s_{0}) \prod_{i=0}^{T-1} \pi_{\theta}(a_{i} \mid s_{i}) P(s_{i+1}, r_{i} \mid s_{i}, a_{i})\] where $\pi_{\theta}$ gives the probability distribution of actions that the agent is sampling from. Taking the logarithm and gradient on both sides, we get that \[\nabla_{\theta} \log P(t \mid \theta) = \nabla_{\theta} \sum_{i=0}^{T-1} \log \pi_{\theta}(a_{i} \mid s_{i})\] and thus, by taking this together with \ref{policy_grad} that \[\nabla_{\theta} E[G(\tau) \mid \theta] = E\left[ G(\tau) \nabla_{\theta} \sum_{i=0}^{T-1} \log \pi_{\theta} (a_{i} \mid s_{i}) \right]\] and this finally gives us a good way to update our neural network: simply increase $\pi_{\theta} (a_{i} \mid s_{i})$ by following the gradient of the neural network.
+
+
+Now, this is great if we have direct access to a gradient descent optimizer. However, most modern machine learning frameworks is fixed to the model of minimizing an error function. The solution is very simple; to maximize $G(\tau) \sum_{i} \log \pi_{\theta} (s_{i} \mid s_{i})$ we can minimize $-G(\tau) \sum_{i} \log \pi_{\theta} (a_{i} \mid s_{i})$. Thus our loss could be just that. A small tweak would be to use the inner product between the rewards vector and the log-probabilities, i.e. $\overrightarrow r \cdot {\log \pi(\overrightarrow a \mid \overrightarrow s)}$ instead of just the product of the sums. This ensures that if we took an unlikely action and it paid off, we encourage that more.
+
+\subsubsection{Normalization \& baseline}
+There are a number of challenges when doing policy gradient learning in practise. One is that rewards are often very high variance and not balanced. For example, if we only care about achieving a goal without the possibility of failure, every reward will be positive so every action will be encouraged. The reason things still work in this situation is that actions leading to higher rewards will lead to steeper gradients and be ``encouraged more''. In this case we can better performance by normalizing rewards by subtracting the mean and dividing by the standard deviation. This of course only works if we use the inner product loss described above, as the loss would otherwise just be 0.
+
+\begin{figure} 
+% https://q.uiver.app/?q=WzAsNSxbMCwxLCJcXGJveGVke3NfMH0iXSxbMiwwLCJcXGJveGVke3NfMX0iXSxbNCwwLCJcXGJveGVke3NfMn0iXSxbMywyLCJcXGJveGVke3NfM30iXSxbNiwxLCJcXGJveGVke3NfNH0iXSxbMCwxLCIzIl0sWzAsMywiMSIsMl0sWzEsMiwiMSJdLFsyLDQsIjEiXSxbMyw0LCIxMCIsMl1d
+\[\begin{tikzcd}
+	&& {\boxed{s_1}} && {\boxed{s_2}} \\
+	{\boxed{s_0}} &&&&&& {\boxed{s_4}} \\
+	&&& {\boxed{s_3}}
+	\arrow["3", from=2-1, to=1-3]
+	\arrow["1"', from=2-1, to=3-4]
+	\arrow["1", from=1-3, to=1-5]
+	\arrow["1", from=1-5, to=2-7]
+	\arrow["10"', from=3-4, to=2-7]
+\end{tikzcd}\]
+\caption{Example of a situation in which normalization of rewards is a bad idea.}
+\label{fig:bad_norm}
+\end{figure}
+
+This method, however, is not always a good idea. Consider for example the graph in figure \ref{fig:bad_norm} with two possible reward trajectories: $r_{1} = (1, 10)$ and $r_{2} = (3, 1, 1)$. Normalized, these become $r_{1}' = (-0.99, 0.99)$ while $r_{2}' = (1.41, -0.7, -0.7)$, hence we encourage the second trajectory. This method works if we can take actions independently of previous actions but in other cases it might not. It gets better if we maintain a running average, but it can still fail.
+
+Another way of normalizing is by comparing to a baseline. We could train a value estimator alongside our policy gradient network and use the predictions from this network to normalize the observed rewards. That is, if we observe a trajectory $\tau = (s_{0}, a_{0}, r_{0}, s_{1}, a_{1}, r_{1}, \dots)$ and we have network approximating $r'_{p} = \m E[r_{p} \mid s_{p}]$ we can normalize to get $\tau' = (s_{0}, a_{0}, r_{0} - r'_{0}, \dots)$. If the approximation is good, this would reduce the variance and balance rewards around zero.
+
+Basline normalization is what's usually used when using policy gradient methods in practice. It's simple to add if you already have some experience with neural networks and it's much more robust than naive normalization.
+
+
+\subsection{Advantage estimation}
+An alternative to normalization is \emph{advantage estimation}. Here, we compute a \emph{value function} of each state and normalize using the value difference. Specifically, given a trajectory $\tau = (\overrightarrow s_{t}, \overrightarrow a_{t}, \overrightarrow r_{t})$ we compute values $v_{t} = V(s_{t})$ and new rewards $r'_{t} = r_{t} + (v_{t+1} - v_{t})$. The idea is that if we get a good state, where many actions yields a high reward, we want to rescale those rewards to ensure we still pick the best and not just any of the good ones.
+
+If we're trying to balance a pole then the advantage might be the absolute angle of the pole from vertical. When computing Gröbner bases, Dylan Peifer used two different value functions, one is the number of pairs left to reduce and the other is the total number of polynomial additions it would take to complete Buchbergers algorithm if we were using the degree strategy instead of the agent. 
+
+A variation on advantage estimation is \emph{generalized} advantage estimation introduced in \cite{GAE}. Here, we modify the computation of the return, instead of \[G(\tau) = \sum_{t=0}^{\infty} \gamma^{t} r_{t}\] we compute \[G(\tau, \lambda) = (1 - \lambda)\sum_{n=1}^{\infty} \lambda^{n-1} \sum_{t=0}^{n-1} \gamma^{t} r_{t}\] Here $0 \leq \lambda \leq 1$ is a hyperparameter, controlling a trade-off between variance and bias. With $\lambda = 0$ this is the usual (unbaised) return function. Increasing $\lambda$ towards 1 lowers the variance of the returns but gives a greater bias.
+
 
 
 
@@ -614,13 +637,6 @@ Following the work of Dylan Peifer \cite{peifer} we use a neural network to lear
 Also in line with \cite{peifer} we focus on binomial ideals (ideals generated by polynomials with exactly 2 non-constant terms) in order to simplify the task of representing a polynomial to a network. It is guaranteed that a Groebner basis for an ideal generated by binomials will consist of binomials. This enables us to encode a pair of binomials in known space.
 
 Binomial ideals are a special case of \emph{lattice ideals} wich are generated by binomials in which each variable appears in only one of the terms. These have applications in optimization and integer programming, for example \colorbox{red}{https://arxiv.org/pdf/math/0508287.pdf}. Thus, binomial ideals are still useful, although it would interesting to explore how to represent polynomials with an abitrary number of terms to a neural network.
-
-\subsection{Markov Decision Process}
-The problem of pair selection is modeled as a Markov Decision Process. During a run of Buchbergers Algorithm the \emph{select} subroutine is implemented by the agent. At timestep $t$ the agent sees the state $P_{t}$ which is the current set of polynomial pairs. The agent must then choose a pair $a_{t} \in P_{t}$ which is fed back into Buchbergers algorithm as the result of \emph{select}. The environment then updates by removing $p$ from $P$, reducing the correpsonding and S-polynomial and updating $G$ and $P$.
-
-The reward $r_{t}$ given for the action $a_{t}$ is $-1$ times the number of polynomial additions performed when reducing $a_{t}$. This metric is chosen since it is the most expensive computation and it serves as a proxy for total computation.
-
-This loops until a complete Gröbner basis is constructed at timestep $T$, yielding the trajectory $\tau = (P_{0}, a_{0}, r_{0}, \dots, P_{T}, a_{T}, r_{T})$. The goal of the agent is to maximize the exprected return $\m E[\sum_{t=1}^{T} r_{t}]$ which is minimizing the number of polynomial additions.
 
 \subsection{Generating random ideals}
 To produce training data we generate a set of random binomials for each episode of the training. We parameterize the space of possible binomial ideals by three numbers: the number of variables in the polynomial ring $n$, the maximum total degree of any binomial $d$ and the number of generating polynomials $s$.
@@ -642,11 +658,9 @@ For the coefficients we take the coeeficient field to be $\m Z / 32003 \m Z$ and
   \label{tab:std_perf}
 \end{table}
 
-Let's take a look at how existing strategies perform, see table \ref{tab:std_perf}. The baseline ought to be picking a random pair. The easiest strategy to implement is an agent simply saying 1 every time since 1 is always an allowed action. This would be the queue strategy. This actually performs surprisingly well despite being very simple. It makes intuitive sense: The first added pairs are the pairs of the generating set. Especially when the generating set is small is it very likely that none of these are redundant, so it makes sense to consider dem. Compare this the ``opposite'' strategy: always picking the most recently added pair. This performs extremely badly with few generators, but less badly with more generators since then some generators ought to be redundant.
+Let's take a look at how existing strategies perform, see table \ref{tab:std_perf}. The baseline ought to be picking a random pair. The easiest strategy to implement is an agent simply saying 1 every time since 1 is always an allowed action. This would be the queue strategy. This actually performs surprisingly well despite being very simple. It makes intuitive sense: The first added pairs are the pairs of the generating set. Especially when the generating set is small is it very likely that none of these are redundant, so it makes sense to consider dem. Compare this the ``opposite'' strategy: always picking the most recently added pair. This performs extremely badly with few generators, but less badly with more generators since then some generators ought to be redundant. Notice, that queue and stack can't be learned by the neural network. Since the network scores each pair independently it can't know which was added first.
 
-Notice, that queue and stack can't be learned by the neural network. Since the network scores each pair independently it can't know which was added first. It should be noted that we use the queue strategy to break ties in the other strategies.
-
-Degree and Normal strategies both outperform the queue strategy and degree outperforms normal, but with more with few generators. However, TrueDegree, which was introduced in \cite{peifer}, outperforms every other strategy. TrueDegree was found as an approximation of the strategy learned by their neural network. 
+Degree and Normal strategies both outperform the queue strategy and degree outperforms normal, but moreso with few generators. However, TrueDegree, which was introduced in \cite{peifer}, outperforms every other strategy. TrueDegree was found as an approximation of the strategy learned by their neural network.
 
 \subsection{Important implementation details}
 \begin{table}[h]
@@ -666,10 +680,10 @@ Degree and Normal strategies both outperform the queue strategy and degree outpe
   \label{tab:imp_details}
 \end{table}
 
-We can compare some common optimizations.
+Using the setup for evaluating the neural network, we can compare some common optimizations. The results can be seen in table \ref{tab:imp_details}
 
 \subsubsection{Pair elimination}
-Pair elemination is clearly important, the lowest numbers are achieved using pair elemination.
+Pair elemination as in Gebaur-Möller reduction have long been known to drastically improve performance. We confirm that here, the lowest numbers are achieved using pair elemination.
 
 
 % \subsubsection{Term ordering}
@@ -677,14 +691,14 @@ Pair elemination is clearly important, the lowest numbers are achieved using pai
 \subsubsection{Fully reducing polynomials}
 The division algorithm presented in Algorithm \ref{alg:div} only reduces the leading term of the polynomial. However, it makes sense to reduce every term, such that no leading term in the set of polynomials divides any term of the reduced polynomial. This gives smaller polynomials (lower total degree) which should increase the chance that it divides a later polynomial. With this reasoning it has generally been accepted as a good idea, but it might not be so clear-cut.
 
-We see that while fully reducing the polynomials doesn't change the number of required selections much, it adds a lot of polynomial additions, which are expensive. It seems (at least in our implementation) that number of additions correlates much better with execution time than number of selections. 
+We see that while fully reducing the polynomials doesn't change the number of required selections much, it adds a lot of polynomial additions, which are expensive. It seems (at least in our implementation) that number of additions correlates much better with execution time than number of selections. This should be noted as a difference between our implementation an the one found in \cite{peifer} as they fully reduce polynomials and we do not.
 
 % Traditionally, performance is measured as the number of selections needed to construct a full Gröbner basis. However, we see that execution time (at least on our implementation) is more directly correlated to the number of polynomial additions. It makes sense that fully reducing a polynomial will be better when only considering selections, as it will reduce the total degree of the S-polynomials added to the Gröbner basis, which increases the chance of it dividing the next syzygy polynomials. However, reducing every term is more work and thus it may not be worth it when measuring execution time.
 
 
 
 \subsection{Network architecture}
-A challenge when applying neural networks to this problem is the uneven size of the input. The agent needs to select a pair from an abitrarily large list of pairs. To solve this, we try employing Q-learning and policy gradient networks. Instead of having the network select a pair, we try to score each pair and select the one with the highest score. This removes the need to encode the state.
+A challenge when applying neural networks to this problem is the uneven size of the input. The agent needs to select a pair from an abitrarily large list of pairs. To solve this, we try employing Q-learning and policy gradient networks. Instead of having the network select a pair, we try to score each pair and select the one with the highest score. This removes the need to encode the entire state.
 
 For the Q-network we try to learn the function \[Q_{\pi}(\tuple{f, g}) = \m E[G(\tau_{p}) \mid \tuple{f, g} \in s_{p}, \pi].\] i.e. the expected number of polynomial reductions after choosing this pair.
 
@@ -711,19 +725,70 @@ The architecture of the neural network is given below:
 	\arrow["{relu \,\circ (A_{64, 4n} + b_{64})}", from=1-1, to=1-4]
 	\arrow["{(A_{1, 64} + b)}", from=1-4, to=1-7]
 \end{tikzcd}\]
+Here, $A_{64, 4n}$ is a matrix of size $64 \times 4n$ and $b_{64}$ is a vector of length $64$. The same network architecture is used for the baseline network.
 
-However, we could not get that to work. It seemed to learn something but it learned very slowly and I don't know enough about deep learning to figure out why.
+\subsection{Network perfomance}
+After debugging many issues, we started to see results. To calibrate the shape and size of the network we trained it on a single ideal with 3 variables, maximum degree of 10 and 4 generators. Using three layers here resultet in it overfitting, which mean rote learning the optimal sequence. While this may seem like a success at first glance, it's really not, since the network have learned by rote instead of an actual strategy. We can see a comparison to using two layers in figure \ref{fig:single_ideal}
+
+\begin{figure}
+  \centering
+  \begin{subfigure}[b]{0.49\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{rews_En3_4k_3layer.png}
+    \caption{3 layers trained on a single ideal.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.49\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{rews_En3_4k_2layer.png}
+    \caption{2 layers trained on a single ideal.}
+  \end{subfigure}
+  \caption{Comparison of model sizes when training on a single ideal.}
+  \label{fig:single_ideal}
+\end{figure}
 
 
+Going up the full training set, we trained the model on dynamically generated ideals. Performance turned out to match the degree strategy but did not exceed it significantly. We theorize this is because we did not implement GAE but instead went with baseline normalization. The results can be seen in table \ref{tab:eval}
 
-\subsection{Technological choices}
+\begin{table}
+  \centering
+  \begin{tabular}{l|rrr}
+    Strategy & Random & Degree & Agent \\
+    Score    &  398.7 &  219.6 & 206.4
+  \end{tabular}
+  \caption{Evaluation of the final model trained on random ideals generated by 4 polynomials of degree less than 10 over three variables. Result is average of 1000 random ideals.}
+  \label{tab:eval}
+\end{table}
+
+The model was trained on 24000 ideals using an ADAM optimizer with a learning rate of $10^{-4}$. We tried finetuning the model by running it for another 8000 iterations with learning rate $10^{-5}$ but this did not improve performance. The training process can be seen in figure \ref{fig:convergence}
+
+\begin{figure}[h]
+  \includegraphics[width=0.9\textwidth]{full_24k_En4_2layer.png}
+  \caption{Convergence of the neural network. The graph shows a running average of polynomial additions for each network update with window size 500.}
+  \label{fig:convergence}
+\end{figure}
+
+
+\section{Technological choices and demo}
 We chose to write the code for this experiment in Julia using the Flux framework for deep learning and building the ReinforcementLearning.jl project as a skeleton for reinforcement learning.
 
 Writing the program in julia had two advantages: we could keep all the code in a single language and we improved running time significantly over the implementation by \cite{peifer}.
 
 Taking a look at \url{https://github.com/dylanpeifer/deepgroebner} we see that $\sim 25\%$ of the project is written in C++. This is an implementation of the Buchberger algorithm and code supporting that and it's nescesary to keep the code fast. However, a TensorFlow model is built in Python and they must use Python code to bridge between TensorFlow and the custom Buchberger code, even though both are written in C++. This incurs a cost, both on the programmer who needs to learn two languages, and on the runtime. Converting between Python and C++ is not free and since this exchange needs to happen at each selection, taking approximately 100 selections to produce a Gröbner basis, this cross-over happens about 8.000.000 times during a training run.
 
-By keeping everything in Julia, which is very fast language, we only need to learn a single language, and we prevent the overhead. In practice, this means that we can train the same models as they did in similar timeframes, but on one core of an Intel i5 CPU instead of an c5n.xlarge AWS instance.
+By keeping everything in Julia, which is very fast language, we only need to learn a single language, and we prevent the overhead. In practice, this means that we can train the same models as they did in similar timeframes, but on an Intel i5 CPU instead of an c5n.xlarge AWS instance.
+
+\begin{minted}[breaklines, escapeinside=||, mathescape=true, linenos, numbersep=3pt, gobble=2, frame=lines, fontsize=\small, framesep=2mm]{julia}
+  using Deepgroebner
+  params = GroebnerEnvParams(3, 10, 4, nothing)
+  e = pg_experiment(params, 120_000, 10^-4)
+  run(e)
+
+  eval_model(m_pg.env, strat_rand)
+  eval_model(m_pg.env, strat_degree)
+  eval_model(m_pg.env, m_pg.policy)
+\end{minted}
+
 
 
 
