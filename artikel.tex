@@ -469,7 +469,9 @@ Now, we can further use the law of total probality twice to get
              &= \sum_{a} \pi(a \mid s) \sum_{s', r} p(s', r \mid s, a) (r + \gamma v_{\pi}(s'))
 \end{align}
 
-By shifting our focus slightly to consider the value of \emph{actions} instead of states, we can define an \emph{action-value} function, denoted \[q_{\pi}(s, a) = \m E[G(\tau_{p}) \mid s_{p} = s, a_{p} = a, \pi]. \]
+And this actually gives us a way to learn. By starting with a random policy $\pi_{0}$ we can sample some trajectories, giving us values for $r, a$ and $s$. Then the above is a number of linear equations that can be solved to find $v_{\pi_{0}}(s)$ for every $s$. Based on this value-function we can devise a new strategy $\pi_{1}$ which chooses the action leading to the most valuable state. Repeating this process, called policy iteration in the literature, should provide better and better agents. It does work, but it has some serious limitations. An obvious one is in the face of non-deterministic environments: how do we know which state each action will lead to? That requires a good model of the environment to answer, which we may not have.
+
+One solution to the problem above is to shift our focus slightly to consider the value of \emph{actions} instead of states. We can define an \emph{action-value} function, denoted \[q_{\pi}(s, a) = \m E[G(\tau_{p}) \mid s_{p} = s, a_{p} = a, \pi]. \]
 
 Using these we can define the \emph{optimal} value functions:
 
@@ -496,13 +498,10 @@ which is called the Bellman equation for $v_{*}$. The Bellman equation for $q_{*
 \[q_{*}(s, a) = \sum_{s', r} p(s', r \mid s, a) (r + \gamma \max_{a'} q_{*}(s', a')).\]
 
 These equations inspires the learning equation
-\[V(s_{p}) = (1 - \alpha) V(s_{p}) + \alpha \max_{a} \{r_{p+1} + \gamma V(s_{p+1})\}.\]
-
-Here, $\alpha$ is called the learning rate. Convergence of this learning equation is guaranteed by a general theorem in control theory, see \cite{cjch}.
-
-We get a similar update equation for Q-learning:
-
 \[Q(s_{p}, a_{p}) = (1 - \alpha) Q(s_{p}, a_{p}) + \alpha (r_{p+1} + \gamma \max_{a} Q(s_{p+1}, a))\]
+
+Here, $\alpha$ is called the learning rate. This is a slight variation of policy iteration, but whereas policy iteration worked on the state-value function, this equation applies to the action-value function as well. It can be shown that under light assumptions this learning method converges to the optimal q-function, for at full exposition see \cite{cjch}.
+
 
 \begin{example}
   \begin{figure}
@@ -565,7 +564,7 @@ Normal Q-learning is a temporal-difference learning method, which means it only 
   \end{cases} \]
 for every $t \in D$ and let our loss-function be the euclidean distance from $G$ to the vector $H_{t} = Q(s_{t}, a_{t})$ for $t \in D$.
 
-While there is no proven reason why this should aid learning, DeepMind provides three reasons: First, it utilizes the data more efficiently by using each timestep in several parameter updates which ought to speed up the learning. Second, rewards are often correlated between consecutive steps. For example if we're trying to balance, we're not suddely out of balance. Thus, rewards will have a positive correlation with previous rewards. Taking samples breaks up these correlations, which reduces the variance between updates. Third, they theorize that, since the policy updates with the estimated Q-function, there could some feedback-loops between the agent and the samples leading to oscillations and potentially divergence. Using experience replay could smooth out these feedbacks.
+While there is no proven reason why this should aid learning, DeepMind provides three reasons: First, it utilizes the data more efficiently by using each timestep in several parameter updates which ought to speed up the learning. Second, rewards are often correlated between consecutive steps. For example if we're trying to balance a pole, the pole is not suddenly out of balance. Thus, rewards will have a positive correlation with previous rewards. Taking samples breaks up these correlations, which reduces the variance between updates. Third, they theorize that, since the policy updates with the estimated Q-function, there could some feedback-loops between the agent and the samples leading to oscillations and potentially divergence. Using experience replay could smooth out these feedbacks and break any feedback loops.
 
 Whatever the reason, experience replay have turned out to be a very important part of succesful Q-learning.
 
@@ -590,13 +589,15 @@ Now we're in good shape. Since $\log$ is a monotonically growing function we now
   The above derivation can be done more generally than we've done in \ref{policy_grad}. By assuming an arbitrary, not necessarily discrete, probility distribution of states, we could replace the sum with an integral for a more general derivation.
 \end{remark}
 
-Right, so how do we increase the probability of a trajectory? Intuitively, we just increase the probability of the actions the trajectory consists of, and this turns out to be sufficient. Since each action is taken independently of previous actions, we have \[P(t \mid \theta) = P(s_{0}) \prod_{i=0}^{T-1} \pi_{\theta}(a_{i} \mid s_{i}) P(s_{i+1}, r_{i} \mid s_{i}, a_{i})\] where $\pi_{\theta}$ gives the probability distribution of actions that the agent is sampling from. Taking the logarithm and gradient on both sides, we get that \[\nabla_{\theta} \log P(t \mid \theta) = \nabla_{\theta} \sum_{i=0}^{T-1} \log \pi_{\theta}(a_{i} \mid s_{i})\] and thus, by taking this together with \ref{policy_grad} that \[\nabla_{\theta} E[G(\tau) \mid \theta] = E\left[ G(\tau) \nabla_{\theta} \sum_{i=0}^{T-1} \log \pi_{\theta} (a_{i} \mid s_{i}) \right]\] and this finally gives us a good way to update our neural network: simply increase $\pi_{\theta} (a_{i} \mid s_{i})$ by following the gradient of the neural network.
+Right, so how do we increase the probability of a trajectory? Intuitively, we just increase the probability of the actions the trajectory consists of, and this turns out to be sufficient. Since each action is taken independently of previous actions, we have \[P(t \mid \theta) = P(s_{0}) \prod_{i=0}^{T-1} \pi_{\theta}(a_{i} \mid s_{i}) P(s_{i+1}, r_{i} \mid s_{i}, a_{i}).\] Taking the logarithm and gradient on both sides, we get that \[\nabla_{\theta} \log P(t \mid \theta) = \nabla_{\theta} \sum_{i=0}^{T-1} \log \pi_{\theta}(a_{i} \mid s_{i})\] and thus, by taking this together with \ref{policy_grad} that \[\nabla_{\theta} E[G(\tau) \mid \theta] = E\left[ G(\tau) \nabla_{\theta} \sum_{i=0}^{T-1} \log \pi_{\theta} (a_{i} \mid s_{i}) \right]\] and this finally gives us a good way to update our neural network: simply increase $\pi_{\theta} (a_{i} \mid s_{i})$ by following the gradient of the neural network.
 
 
-Now, this is great if we have direct access to a gradient descent optimizer. However, most modern machine learning frameworks is fixed to the model of minimizing an error function. The solution is very simple; to maximize $G(\tau) \sum_{i} \log \pi_{\theta} (s_{i} \mid s_{i})$ we can minimize $-G(\tau) \sum_{i} \log \pi_{\theta} (a_{i} \mid s_{i})$. Thus our loss could be just that. A small tweak would be to use the inner product between the rewards vector and the log-probabilities, i.e. $\overrightarrow r \cdot {\log \pi(\overrightarrow a \mid \overrightarrow s)}$ instead of just the product of the sums. This ensures that if we took an unlikely action and it paid off, we encourage that more.
+Now, this is great if we have direct access to a gradient descent optimizer. However, most modern machine learning frameworks is fixed to the model of minimizing an error function. The solution is very simple; to maximize $G(\tau) \sum_{i} \log \pi_{\theta} (s_{i} \mid s_{i})$ we can minimize $-G(\tau) \sum_{i} \log \pi_{\theta} (a_{i} \mid s_{i})$. Thus our loss could be just that.% A small tweak would be to use the inner product between the rewards vector and the log-probabilities, i.e. $\overrightarrow r \cdot {\log \pi(\overrightarrow a \mid \overrightarrow s)}$ instead of just the product of the sums. This ensures that if we took an unlikely action and it paid off, we encourage that more.
+
+Policy gradient methods have turned out to generally perform better than deep q-learning. They are however very difficult to work with and will often fail to converge. That is, when they do work, they outperform Q-learning methods, but getting them to work can be tricky. The next section discusses one common problem and some possible solutions.
 
 \subsubsection{Normalization \& baseline}
-There are a number of challenges when doing policy gradient learning in practise. One is that rewards are often very high variance and not balanced. For example, if we only care about achieving a goal without the possibility of failure, every reward will be positive so every action will be encouraged. The reason things still work in this situation is that actions leading to higher rewards will lead to steeper gradients and be ``encouraged more''. In this case we can better performance by normalizing rewards by subtracting the mean and dividing by the standard deviation. This of course only works if we use the inner product loss described above, as the loss would otherwise just be 0.
+There are a number of challenges when doing policy gradient learning in practise. One is that rewards are often very high variance and not balanced. For example, if we only care about achieving a goal without the possibility of failure, every reward will be positive so every action will be encouraged. The reason things still work in this situation is that actions leading to higher rewards will lead to steeper gradients and be ``encouraged more''. In this case we can better performance by normalizing rewards by subtracting the mean and dividing by the standard deviation.
 
 \begin{figure} 
 % https://q.uiver.app/?q=WzAsNSxbMCwxLCJcXGJveGVke3NfMH0iXSxbMiwwLCJcXGJveGVke3NfMX0iXSxbNCwwLCJcXGJveGVke3NfMn0iXSxbMywyLCJcXGJveGVke3NfM30iXSxbNiwxLCJcXGJveGVke3NfNH0iXSxbMCwxLCIzIl0sWzAsMywiMSIsMl0sWzEsMiwiMSJdLFsyLDQsIjEiXSxbMyw0LCIxMCIsMl1d
@@ -614,7 +615,7 @@ There are a number of challenges when doing policy gradient learning in practise
 \label{fig:bad_norm}
 \end{figure}
 
-This method, however, is not always a good idea. Consider for example the graph in figure \ref{fig:bad_norm} with two possible reward trajectories: $r_{1} = (1, 10)$ and $r_{2} = (3, 1, 1)$. Normalized, these become $r_{1}' = (-0.99, 0.99)$ while $r_{2}' = (1.41, -0.7, -0.7)$, hence we encourage the second trajectory. This method works if we can take actions independently of previous actions but in other cases it might not. It gets better if we maintain a running average, but it can still fail.
+This method, however, is not always a good idea. Consider for example the graph in figure \ref{fig:bad_norm} with two possible reward trajectories: $r_{1} = (1, 10)$ and $r_{2} = (3, 1, 1)$. Normalized, these become $r_{1}' = (-0.99, 0.99)$ while $r_{2}' = (1.41, -0.7, -0.7)$, hence we encourage the second trajectory. This method works if we can take actions independently of previous actions but in other cases it might not. It gets better if we maintain a running average over previous trajectories, but it can still fail.
 
 Another way of normalizing is by comparing to a baseline. We could train a value estimator alongside our policy gradient network and use the predictions from this network to normalize the observed rewards. That is, if we observe a trajectory $\tau = (s_{0}, a_{0}, r_{0}, s_{1}, a_{1}, r_{1}, \dots)$ and we have network approximating $r'_{p} = \m E[r_{p} \mid s_{p}]$ we can normalize to get $\tau' = (s_{0}, a_{0}, r_{0} - r'_{0}, \dots)$. If the approximation is good, this would reduce the variance and balance rewards around zero.
 
@@ -622,7 +623,7 @@ Basline normalization is what's usually used when using policy gradient methods 
 
 
 \subsection{Advantage estimation}
-An alternative to normalization is \emph{advantage estimation}. Here, we compute a \emph{value function} of each state and normalize using the value difference. Specifically, given a trajectory $\tau = (\overrightarrow s_{t}, \overrightarrow a_{t}, \overrightarrow r_{t})$ we compute values $v_{t} = V(s_{t})$ and new rewards $r'_{t} = r_{t} + (v_{t+1} - v_{t})$. The idea is that if we get a good state, where many actions yields a high reward, we want to rescale those rewards to ensure we still pick the best and not just any of the good ones.
+An alternative to normalization is \emph{advantage estimation}. Here, we compute a \emph{value function}\footnote{This value function is not the same as the one in section 4.1. The clash in naming is unfortunate, but this is the terminology used in literature, so I will follow it.} of each state and normalize using the value difference. Specifically, given a trajectory $\tau = (\overrightarrow s_{t}, \overrightarrow a_{t}, \overrightarrow r_{t})$ we compute values $v_{t} = V(s_{t})$ and new rewards $r'_{t} = r_{t} + (v_{t+1} - v_{t})$. The idea is that if we get a good state, where many actions yields a high reward, we want to rescale those rewards to ensure we still pick the best and not just any of the good ones.
 
 If we're trying to balance a pole then the advantage might be the absolute angle of the pole from vertical. When computing Gröbner bases, Dylan Peifer used two different value functions, one is the number of pairs left to reduce and the other is the total number of polynomial additions it would take to complete Buchbergers algorithm if we were using the degree strategy instead of the agent. 
 
@@ -764,7 +765,7 @@ The model was trained on 24000 ideals using an ADAM optimizer with a learning ra
 
 \begin{figure}[h]
   \includegraphics[width=0.9\textwidth]{full_24k_En4_2layer.png}
-  \caption{Convergence of the neural network. The graph shows a running average of polynomial additions for each network update with window size 500.}
+  \caption{Convergence of the neural network. The graph shows a running average of polynomial additions for each network update with window size 1000.}
   \label{fig:convergence}
 \end{figure}
 
