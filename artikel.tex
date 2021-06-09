@@ -779,6 +779,199 @@ Taking a look at \url{https://github.com/dylanpeifer/deepgroebner} we see that $
 
 By keeping everything in Julia, which is a very fast language, we only need to learn a single language, and we prevent the overhead. In practice, this means that we can train the same models as they did in similar timeframes but on an Intel i5 CPU instead of a c5n.xlarge AWS instance even with an naive implementation.
 
+
+\section{Hitchhikers guide to the code}
+The code for this project can be found at https://github.com/0708andreas/Deepgroebner.jl and is mainly structured into three files.
+
+\begin{enumerate}
+  \item groebner.jl holds general code for working with multinomials and computing Gröbner bases. This is the code you could also find in an advanced computer algebra system.
+
+  \item GroebnerEnv.jl holds the code for the environment for the agent to interact with.
+
+  \item model.jl holds the setup code to create a new agent and train it.
+    
+\end{enumerate}
+
+\subsection{groebner.jl}
+
+We start by defining a structure to hold a single term. A term is represented as a coefficient and an exponent vector:
+\begin{minted}[breaklines, escapeinside=||, mathescape=true, linenos, numbersep=3pt, gobble=2, frame=lines, fontsize=\small, framesep=2mm]{julia}
+ struct term{N}
+    l :: GFElem{Int64}    # coefficient
+    a :: NTuple{N, Int64} # exponent
+end
+\end{minted}
+
+Then a multinomial is simply a list of terms. This lets us express several constructions very consicely, for example multiplication:
+\begin{minted}[breaklines, escapeinside=||, mathescape=true, linenos, numbersep=3pt, gobble=2, frame=lines, fontsize=\small, framesep=2mm]{julia}
+(*)(t :: term, r :: term) = term(t.l * r.l, t.a .+ r.a)
+(*)(t :: term, f ) = Ref(t) .* f
+\end{minted}
+
+Especially computing the S-polynomial is almost a direct translation of the mathematical definition.
+\begin{minted}[breaklines, escapeinside=||, mathescape=true, linenos, numbersep=3pt, gobble=2, frame=lines, fontsize=\small, framesep=2mm]{julia}
+S(f, g) = let gamma = lcm(LT(f), LT(g))
+    minus((gamma/LT(f))*f, (gamma/LT(g))*g)
+end
+\end{minted}
+
+This file also houses the multinomial division algorithm (here called mdiv instead of reduce as reduce has another meaning in Julia), a full implementation of Buchberger's algorithm, code to perform Gebauer\&Möller reduction and a simple implementation of Buchberger's S-criterion:
+
+\begin{minted}[breaklines, escapeinside=||, mathescape=true, linenos, numbersep=3pt, gobble=2, frame=lines, fontsize=\small, framesep=2mm]{julia}
+function is_groebner_basis(G)
+    return all([mdiv(S(G[i], G[j]), G) == [] for i in 1:length(G) for j in i:length(G)])
+end
+\end{minted}
+
+
+\subsection{GroebnerEnv.jl}
+In GroebnerEnv.jl we find the GroebnerEnv structure. It is a subtype of an AbstractEnv, which is defined in the package ReinforcementLearning.jl. We make good use of this package to provide the structure of reinforcement learning.
+
+The GroebnerEnv structure holds a parameters field containing the number of variables in the multinomials, the maximum degree of binomials and how many generators to use for each ideal. It also holds the not-yet-finished Gröbner basis $G$, the list of pairs to reduce $P$ as well as the reward given for the last action, whether we've completed the Gröbner basis or not, how many selections we've performed and a random number generator.
+
+\begin{minted}[breaklines, escapeinside=||, mathescape=true, linenos, numbersep=3pt, gobble=2, frame=lines, fontsize=\small, framesep=2mm]{julia}
+mutable struct GroebnerEnv{N, R<:AbstractRNG} <: AbstractEnv
+    params::GroebnerEnvParams
+    G::Array{Array{term{N}, 1}, 1}
+    P::Vector{NTuple{2, Array{term{N}, 1}}}
+    reward::Int
+    done::Bool
+    t::Int
+    rng::R
+end
+\end{minted}
+
+The interaction with the environment is as follows: the environment is initialized with a call to RLBase.reset!(env). Then the result of RLBase.state(env) is given to the agent, which picks a number $a$ between 1 and length(P). Then we call env(a) which selects the a'th pair, reduces it, adds the result to the Gröbner basis, adds new pairs to $P$ and updates env.reward. This process is repeated until env.done is set to true.
+
+This file also holds a function \verb|eval_model| which is used to evaluate the agents performance.
+
+\subsection{model.jl}
+The model.jl file holds the code for both a Q-learner and a policy gradient learner. If we focus on the policy gradient learner, since that's one we got to work, it's a structure holdning an approximator (a neural network) and baseline network as well as the decay factor $\gamma$ and some other parameters.
+
+The function for interacting with rhe environment looks like this:
+
+\begin{minted}[breaklines, escapeinside=||, mathescape=true, linenos, numbersep=3pt, gobble=2, frame=lines, fontsize=\small, framesep=2mm]{julia}
+function (pi::VPGPolicy)(env::AbstractEnv)
+    to_dev(x) = send_to_device(device(pi.approximator), x)
+
+    logits = env |> state |> to_dev |> pi.approximator
+
+    dist = softmax(logits; dims=2)
+    w = Weights(dropdims(dist; dims=1))
+    action = sample(pi.rng, 1:length(w), w)
+
+    action
+end
+\end{minted}
+
+It applies the approximator to \verb|state(env)|, takes softmax on the resulting vector and uses that as a probability distribution from which to sample the action.
+
+Next, we have an update function, which updates the agent after each episode. Condensed, the looks like this.
+
+\begin{minted}[breaklines, escapeinside=||, mathescape=true, linenos, numbersep=3pt, gobble=2, frame=lines, fontsize=\small, framesep=2mm]{julia}
+function RLBase.update!(
+    pi::VPGPolicy,
+    traj::ElasticSARTTrajectory,
+    env::AbstractEnv,
+    ::PostEpisodeStage,
+)
+    states = traj[:state]
+    actions = traj[:action] |> Array # need to convert ElasticArray to Array, or code will fail on gpu
+    gains = traj[:reward] |> x -> discount\_rewards(x, pi.gamma)
+
+    for idx in Iterators.partition(shuffle(1:length(traj[:terminal])), pi.batch\_size)
+        S = select\_last\_dim(states, idx)
+        A = actions[idx]
+        G = gains[idx] |> x -> Flux.unsqueeze(x, 1)
+
+        gs = gradient(Flux.params(pi.baseline)) do # update baseline
+            d = gains[idx] .- [maximum(pi.baseline(s)) for s in S]
+            loss = mean(d .^ 2) # MSE
+            Zygote.ignore() do
+                pi.baseline\_loss = loss
+            end
+            loss
+        end
+        RLBase.update!(pi.baseline, gs)
+
+        gs = gradient(Flux.params(model)) do
+            log\_prob = [logsoftmax(model(s); dims=2) for s in S]
+            log\_prob\_a = [log\_prob[i][A[i]] for i in 1:length(A)]
+            loss = -mean(log\_prob\_a .* d)
+
+            Zygote.ignore() do
+                pi.loss = loss
+            end
+            loss
+        end
+        RLBase.update!(model, gs)
+    end
+end
+\end{minted}
+
+The code uses julias broadcast operators, so \verb|a .* b| is the entry-wise product of two vectors $a$ and $b$. Similarly \verb|d .^ 2| squares each entry of the vector $d$.
+
+Finally, we set up the experiment:
+\begin{minted}[breaklines, escapeinside=||, mathescape=true, linenos, numbersep=3pt, gobble=2, frame=lines, fontsize=\small, framesep=2mm]{julia}
+function pg_experiment(  params :: GroebnerEnvParams,
+                         episodes :: Int,
+                         learn_rate = 10^-3,
+                         gamma = 0.99f0,
+                         seed = 123;
+                         env = nothing)
+
+    rng = StableRNG(seed)
+
+    n = params.nvars
+    d = params.maxdeg
+    s = params.npols
+
+    if env == nothing
+        env = rand_env(params)
+    end
+
+    agent = Agent(
+        policy = VPGPolicy(
+            approximator = NeuralNetworkApproximator(
+                model = Chain(
+                    Dense(n*4, 128, relu; initW = glorot\_uniform(rng)),
+                    Dense(128, 128, relu; initW = glorot\_uniform(rng)),
+                    Dense(128, 1; initW = glorot\_uniform(rng))
+                ),
+                optimizer = ADAM(learn_rate),
+
+            ) |> cpu,
+            baseline = NeuralNetworkApproximator(
+                model = Chain(
+                    Dense(n*4, 128, relu; initW = glorot\_uniform(rng)),
+                    Dense(128, 128, relu; initW = glorot\_uniform(rng)),
+                    Dense(128, 1; initW = glorot\_uniform(rng)),
+                ),
+                optimizer = ADAM(learn\_rate),
+            ) |> cpu,
+            gamma = gamma,
+            rng = rng,
+        ),
+        trajectory = ElasticSARTTrajectory(state = Vector{Array{Int, 2}} => (),
+                                            reward = Int => ()),
+    )
+
+    stop\_condition = StopAfterEpisode(episodes)
+
+    total\_reward\_per\_episode = TotalRewardPerEpisode()
+    time\_per\_step = TimePerStep()
+    hook = ComposedHook(
+        total\_reward\_per\_episode,
+        time\_per\_step,
+    )
+
+    description = "# Make Gröbner bases with Policy Gradients"
+
+    Experiment(agent, env, stop\_condition, hook, description)
+end
+\end{minted}
+and this experiment can be run in an interactive shell like this:
+
 \begin{minted}[breaklines, escapeinside=||, mathescape=true, linenos, numbersep=3pt, gobble=2, frame=lines, fontsize=\small, framesep=2mm]{julia}
   using Deepgroebner
   params = GroebnerEnvParams(3, 10, 4, nothing)
@@ -789,12 +982,7 @@ By keeping everything in Julia, which is a very fast language, we only need to l
   eval_model(m_pg.env, strat_degree)
   eval_model(m_pg.env, m_pg.policy)
 \end{minted}
-
-
-
-
-
-
+which also uses the \verb|eval_model| function to compare the trained model against two standard strategies.
 
 
 \printbibliography
