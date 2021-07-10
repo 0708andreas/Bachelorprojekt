@@ -263,9 +263,9 @@
 \end{titlepage}
 
 \begin{abstract}
-  Dylan Peifer et al \cite{peifer} showed the potential of using machine learning techniques in pure mathematics by having a neural network improve the performance of Buchberger's algorithm, used to compute Gröbner bases. Not only that, but they developed a new selection strategy by interpreting the actions of the network and this new strategy also improves performance over existing strategies. They also introduced this as a challenge for other researchers, to improve their results. As part of this challenge they have written an environment in python to test new techniques against.
+  Dylan Peifer et al \cite{peifer} showed the potential of using machine learning techniques in pure mathematics by having a neural network improve the performance of Buchberger's algorithm, used to compute Gröbner bases. Not only that, but they developed a new selection strategy by interpreting the actions of the network, which also improves performance over existing strategies. They also introduced this as a challenge for other researchers to improve their results.
 
-  This project have written a similar environment in Julia and attempted two simpler techniques: policy gradient without Generalized Advantage Estimation and Q-learning. Using policy gradients without GAE we obtain performance similar to existing strategies and with Q-learning we obtain worse performance, but better than random. This indicates that reducing variance in rewards is the way to make progress.
+  This project have written an environment in Julia to train and evaluate neural networks, similar to the python code Peifer et al used for their article, and attempted two simpler techniques: policy gradient without Generalized Advantage Estimation and Q-learning. Using policy gradients without GAE we obtain performance similar to existing strategies and with Q-learning we obtain worse performance, but better than random. This indicates that reducing variance in rewards is the way to make progress.
 
   This rapport is intended for two audiences: first for people who read \cite{peifer} and wish for some more background and second as an example for mathematicians who want to introduce machine learning in their own research.
 \end{abstract}
@@ -1116,9 +1116,9 @@ which also uses the \mintinline{julia}{eval_model} function to compare the train
 
 \appendix
 \section{Code}
-The code described and used in this report can be found at \url{https://gitlab.au.dk/au612120/Deepgroebner.jl}. The commit used is 018527d0e32f40405ceaccc9ffdba8412f40deb0, permalink: \url{https://gitlab.au.dk/au612120/Deepgroebner.jl/-/tree/018527d0e32f40405ceaccc9ffdba8412f40deb0}
+The code described and used in this report can be found at \url{https://gitlab.au.dk/au612120/Deepgroebner.jl}. The commit used is \\ 018527d0e32f40405ceaccc9ffdba8412f40deb0, permalink: \url{https://gitlab.au.dk/au612120/Deepgroebner.jl/-/tree/018527d0e32f40405ceaccc9ffdba8412f40deb0}
 
-\section{Definitions}
+\section{Definitions and elementary properties}
 Use this section as a reference for elementary algebra terms.
 
 \begin{definition}[Ring, commutative ring]
@@ -1150,10 +1150,12 @@ Note that a field is also a commutative ring and that given a given a commutativ
   \end{itemize}
 \end{definition}
 
-A simple example of an ideal in the ring of integers is sets of the form $[n] = \{nx \mid x \in \m Z\}$. In general, given a finite set of elements $X = \{x_{1}, x_{2}, \dots, x_{t}\} \subseteq R$ we can generate an ideal of these elements: \[\tuple X = \left\{\sum_{i = 1}^{t} a_{i} x_{i} \mid a_{i} \in R\right\}.\] This is the set of linear combinations of the elements from $X$. It is simultaneously the smallest ideal containing every element of $X$.
+A simple example of an ideal in the ring of integers is sets of the form $[n] = \{nx \mid x \in \m Z\}$. In general, given a finite set of elements $X = \{x_{1}, x_{2}, \dots, x_{t}\} \subseteq R$ we can generate an ideal from these elements: \[\tuple X = \left\{\sum_{i = 1}^{t} a_{i} x_{i} \mid a_{i} \in R\right\}.\] This is the set of linear combinations of the elements from $X$.
 
 \begin{definition}[Generating set]
   A \emph{generating set} for an ideal $I$ is a finite set of elements $X \subseteq I$ such that $I = \tuple X$
 \end{definition}
+
+The ring of polynomials over a field have the property that every ideal has a generating set.
 
 \end{document}
