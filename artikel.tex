@@ -14,6 +14,13 @@
 \usepackage[toc,page]{appendix}
 \usepackage{bbm}
 \usepackage{dsfont}
+\usepackage{lastpage}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+
+\cfoot{\thepage\ / \pageref{LastPage}}
 
 \definecolor{codegreen}{rgb}{0,0.6,0}
 \definecolor{codegray}{rgb}{0.5,0.5,0.5}
@@ -247,7 +254,7 @@
   \vspace{6mm}
   \hrule width \hsize \kern 1mm \hrule width \hsize height 2pt
   \vspace{10mm}
-  \noindent{\large Bachelor's project in Mathematics \\ July 6, 2021}
+  \noindent{\large Bachelor's project in Mathematics \\ July 10, 2021}
 
   \vspace{10mm}
 
@@ -265,11 +272,16 @@
 \begin{abstract}
   Dylan Peifer et al \cite{peifer} showed the potential of using machine learning techniques in pure mathematics by having a neural network improve the performance of Buchberger's algorithm, used to compute Gröbner bases. Not only that, but they developed a new selection strategy by interpreting the actions of the network, which also improves performance over existing strategies. They also introduced this as a challenge for other researchers to improve their results.
 
-  This project have written an environment in Julia to train and evaluate neural networks, similar to the python code Peifer et al used for their article, and attempted two simpler techniques: policy gradient without Generalized Advantage Estimation and Q-learning. Using policy gradients without GAE we obtain performance similar to existing strategies and with Q-learning we obtain worse performance, but better than random. This indicates that reducing variance in rewards is the way to make progress.
+  This project have written an environment in Julia to train and evaluate neural networks, similar to the python code Peifer et al used for their article, and attempted two simpler techniques: policy gradient without Generalized Advantage Estimation and Q-learning. Using policy gradients without GAE we obtain performance similar to existing strategies but lower than Peifer et al, and with Q-learning we obtain worse performance but better than random. This indicates that reducing variance in rewards is the way to make progress on this problem.
 
   This rapport is intended for two audiences: first for people who read \cite{peifer} and wish for some more background and second as an example for mathematicians who want to introduce machine learning in their own research.
 \end{abstract}
 
+\newpage
+
+\tableofcontents
+
+\newpage
 
 \section{Introduction}
 In 2020 Dylan Peifer et al \cite{peifer} showed how to use deep learning to improve the performance of algorithms for constructing Gröbner bases. The goal of this project was to reproduce the results of this paper using their method of policy gradient learning as well as attempt to use a simpler technique called Q-learning.
@@ -352,6 +364,7 @@ Let $F = \{f_{1}, \dots, f_{l}\}$ be a set of polynomials and let $I = \tuple F$
 The idea behind Buchberger's algorithm is very simple: We simply see if Buchberger's criterion holds. If it does, we're done. If it doesn't, there is some S-polynomial that doesn't reduce to 0. Add the remainder of that S-polynomial to the basis and try again. When the algorithm terminates (proof of termination is theorem 5.7.2 in \cite{NL}) every S-polynomial will reduce to 0, so by theorem \ref{thm:buchberger_crit} we have a Gröbner basis. In pseudo-code the algorithm is:
 
 \begin{algorithm}[H]
+  
 \DontPrintSemicolon
 
   \KwInput{A set of polynomials $F = \{f_{1}, \dots, f_{l}\}$}
@@ -394,7 +407,7 @@ The problem of selecting the next pair of polynomials is not easy and it turns o
 
   \item[Normal] Pick the pair $(f, g)$ where $\lcm(in(f), in(g))$ is smallest in the used monomial order. This is a refinement of \emph{degree} but is very dependent on the choice of monomial order. In grevlex it doesn't outperform \emph{degree}.
 
-  \item[Sugar] Pick the pair $(f, g)$ with the smallest \emph{sugar degree} which is the degree $S(f, g)$ would have had if the polynomials had been homogenized. Introduced in \cite{sugar} to improve performance on traditionally challenging ideals. 
+  \item[Sugar] Pick the pair $(f, g)$ with the smallest \emph{sugar degree} which is the degree $\lcm(in(f), in(g))$ would have had if the polynomials had been homogenized. Introduced in \cite{sugar} to improve performance on traditionally challenging ideals.
 
   \item[TrueDegree] Introduced in \cite{peifer}, pick the pair $(f, g)$ whose S-polynomial has the lowest total degree. This strategy is an approximation of what their neural network have learned and outperforms all of the strategies above.
 \end{itemize}
@@ -444,7 +457,7 @@ We'll use modern advances in machine learning to learn a better selection strate
 \subsection{Machine learning}
 Machine learning is a technique to approximate any function given some sampled inputs and outputs. Classical techniques include linear regression and support vector machines but I'll focus on neural networks as we use those in this project.
 
-A layer of neurons is an affine transformation of the form $x \mapsto Ax + b$ for some matrix $A$ and vector $b$, followed by a non-linear function called the \emph{activation function}. Typical choices here are the sigmoid function, tanh or relu, defined as $relu(x) = \mathds{1}_{\left[0,\infty\right)}(x) x$ i.e. constantly zero for negative arguments and the identity for positive arguments. A neural network is then a composition of several layers of neurons.
+A layer of neurons is an affine transformation of the form $\m R^{n} \ni x \mapsto Ax + b$ for some matrix $A$ and vector $b$, followed by a non-linear function called the \emph{activation function} applied to every entry of the resulting vector. Typical choices here are the sigmoid function, tanh or relu, defined as $relu(x) = \mathds{1}_{\left[0,\infty\right)}(x) x$ i.e. constantly zero for negative arguments and the identity for positive arguments. A neural network is then a composition of several layers of neurons.
 
 Now, suppose we have a neural network, denoted by $N$ and we would like this network to approximate a function, say the constant function $\m R \ni x \mapsto 0$. Then we'd sample some values in the domain $x_{1}, x_{2}, \dots \in \m R$ and compute the corresponding function values $y_{1}, y_{2}, \dots = 0, 0, \dots$, called \emph{labels}. Next, compute a \emph{loss} value, which is ``how wrong'' the network was: \[loss = \sum_{i} (y_{i} - N(x_{i}))^{2}.\] Since everything in this expression is differentiable\footnote{Technically, $relu$ is only differentiable almost-everywhere.}, we can get a derivative of this expression and by using an algorithm called \emph{backpropagation} we can propagate this derivative back through the layers. By following the direction of the derivative we can update every parameter in the neural network (each entry in the matrices and vectors) make the loss slightly smaller. Repeating this process will eventually yield a good approximation of the input function.
 
@@ -572,7 +585,7 @@ Here, $\alpha$ is called the learning rate. This is a slight variation of policy
 \begin{example}
 
   To illustrate how Q-learning works, let's work through a single update step.
-  \begin{figure}
+  \begin{figure}[hb!]
     % https://q.uiver.app/?q=WzAsMyxbMCwwLCJcXGJveGVke0F9Il0sWzIsMCwiXFxib3hlZHtCfSJdLFsxLDIsIlxcYm94ZWR7Q30iXSxbMCwxLCIxNSIsMCx7ImN1cnZlIjotMX1dLFsxLDAsIjMiLDAseyJjdXJ2ZSI6LTF9XSxbMSwyLCIxIiwwLHsiY3VydmUiOi0xfV0sWzIsMSwiOCIsMCx7ImN1cnZlIjotMX1dLFsyLDAsIjUiLDJdXQ==
     \[\begin{tikzcd}
         {\boxed{A}} && {\boxed{B}} \\
@@ -624,10 +637,10 @@ Here, $\alpha$ is called the learning rate. This is a slight variation of policy
 \subsection{Deep Q-learning}
 The method described above is called tabular learning, as it stores every state-action mapping in a table. This becomes infeasible as the state- and action-space grows. Deep Q-learning attempts to approximate the Q-function with a single neural network. The change is simple, instead of directly updating $Q(s, a)$ as above we compute the loss \[loss = (Q(s_{p}, a_{p}) - R(s_{p}, a_{p}) + \max_{a} Q(s_{p+1}, a))\] and use backpropagation to compute the gradient of that loss function. Then we can use gradient descent to minimize the loss.
 
-Deep Q-learning got its first big success with the program TD-gammon by Gerald Tesauro in 1992. TD-Gammon learned to play backgammon just below the level of expert humans using Q-learning. The remarkable thing is that not only did it train only by playing against itself, but it had no hardcoded heuristics to guide it. It got a score when the game was over and no other feedback during the game.
+Deep Q-learning got its first big success with the program TD-gammon \cite{TDgammon} by Gerald Tesauro in 1992. TD-Gammon learned to play backgammon just below the level of expert humans using Q-learning. The remarkable thing is that not only did it train only by playing against itself, but it had no hardcoded heuristics to guide it. It got a score when the game was over and no other feedback during the game.
 
 \subsubsection{Experience replay}
-Even though TD-Gammon was a huge success, it took a long time before similar results were seen in other games. It wasn't before 2013 that DeepMind succeeded in learning several classic Atari games using Q-learning. Their secret ingredient was \emph{experience replay}.
+Even though TD-Gammon was a huge success, it took a long time before similar results were seen in other games. It wasn't before 2013 \cite{atari} that DeepMind succeeded in learning several classic Atari games using Q-learning. Their secret ingredient was \emph{experience replay}.
 
 Normal Q-learning is a temporal-difference learning method, which means it only learns from the timestep it just took. Experience replay keeps track of previous experiences and uses them when doing an update. To do this, we keep a trajectory of the currect episode, sample some random times from it and perform gradient descent on every remembered timestep simultaneously. Specifically, for a random sample $D = \{t_{i}\} \subset \mathbb N$ of timesteps, we compute the vector
 \[G_{t} =  \begin{cases}
