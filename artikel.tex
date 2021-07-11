@@ -1075,17 +1075,16 @@ function pg_experiment(  params :: GroebnerEnvParams,
         policy = VPGPolicy(
             approximator = NeuralNetworkApproximator(
                 model = Chain(
-                    Dense(n*4, 128, relu; initW = glorot_uniform(rng)),
-                    Dense(128, 1; initW = glorot_uniform(rng))
+                    Dense(n*4, 64, relu; initW = glorot_uniform(rng)),
+                    Dense(64, 1; initW = glorot_uniform(rng))
                 ),
                 optimizer = ADAM(learn_rate),
 
             ) |> cpu,
             baseline = NeuralNetworkApproximator(
                 model = Chain(
-                    Dense(n*4, 128, relu; initW = glorot_uniform(rng)),
-                    Dense(128, 128, relu; initW = glorot_uniform(rng)),
-                    Dense(128, 1; initW = glorot_uniform(rng)),
+                    Dense(n*4, 64, relu; initW = glorot_uniform(rng)),
+                    Dense(64, 1; initW = glorot_uniform(rng)),
                 ),
                 optimizer = ADAM(learn_rate),
             ) |> cpu,
